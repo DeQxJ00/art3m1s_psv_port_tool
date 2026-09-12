@@ -107,6 +107,43 @@ public sealed class CoreTests : IDisposable
     }
 
     [Fact]
+    public async Task ConversionResizesPngInsidePfsAndLoosePng()
+    {
+        string input = Path.Combine(_root, "png-game");
+        string output = Path.Combine(_root, "png-game-psv");
+        string payloadDirectory = Path.Combine(_root, "png-payload");
+        Directory.CreateDirectory(input);
+        Directory.CreateDirectory(Path.Combine(payloadDirectory, "image", "bg"));
+
+        byte[] png = CreateIndexedPng(8, 8, 2,
+            [255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255],
+            [255, 150, 80, 0]);
+        string archivedPng = Path.Combine(payloadDirectory, "image", "bg", "archived.png");
+        await File.WriteAllBytesAsync(archivedPng, png);
+        await File.WriteAllBytesAsync(Path.Combine(input, "loose.png"), png);
+
+        ExtractedArchive source = new('8',
+        [
+            new PfsEntry(Encoding.UTF8.GetBytes("image/bg/archived.png"), "image/bg/archived.png", 0,
+                checked((uint)png.Length), archivedPng)
+        ]);
+        PfsCodec codec = new();
+        await codec.PackPf8Async(source, Path.Combine(input, "root.pfs"));
+
+        await new ConversionService().ConvertAsync(new ConversionOptions(input, output, Ratio: 0.5,
+            Categories: AssetCategories.Images));
+
+        byte[] looseResult = await File.ReadAllBytesAsync(Path.Combine(output, "loose.png"));
+        Assert.Equal(4u, BinaryPrimitives.ReadUInt32BigEndian(looseResult.AsSpan(16, 4)));
+        Assert.Equal(4u, BinaryPrimitives.ReadUInt32BigEndian(looseResult.AsSpan(20, 4)));
+
+        ExtractedArchive rebuilt = await codec.ExtractAsync(Path.Combine(output, "root.pfs"), Path.Combine(_root, "png-verify"));
+        byte[] archivedResult = await File.ReadAllBytesAsync(rebuilt.Entries.Single().ExtractedPath);
+        Assert.Equal(4u, BinaryPrimitives.ReadUInt32BigEndian(archivedResult.AsSpan(16, 4)));
+        Assert.Equal(4u, BinaryPrimitives.ReadUInt32BigEndian(archivedResult.AsSpan(20, 4)));
+    }
+
+    [Fact]
     public async Task TrueTypeFontSubsettingProducesAValidSmallerSfntWhenAFontIsAvailable()
     {
         string? source = new[]

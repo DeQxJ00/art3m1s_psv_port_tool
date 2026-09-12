@@ -133,7 +133,6 @@ public sealed class ConversionService : IConversionService
         double progressSpan)
     {
         string[] files = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
-            .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}.art3m1s-work{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
             .Where(path => !skipPfs || !IsPfsFileName(Path.GetFileName(path)))
             .ToArray();
         IReadOnlySet<int> usedCodePoints = options.SubsetFonts ? await CollectUsedCodePointsAsync(files, cancellationToken) : new HashSet<int>();
