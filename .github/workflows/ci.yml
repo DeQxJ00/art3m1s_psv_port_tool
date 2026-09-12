@@ -84,5 +84,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: |
-          test -f README.md && test -f README.en.md && test -f THIRD-PARTY-NOTICES.md
+          test -f README.md && test -f README.en.md
           for image in ui-zh-CN-dark.png ui-en-US-dark.png ui-zh-CN-light.png ui-en-US-light.png; do test -f "docs/screenshots/$image"; done

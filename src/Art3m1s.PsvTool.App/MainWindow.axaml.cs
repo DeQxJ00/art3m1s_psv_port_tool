@@ -45,6 +45,7 @@ public sealed partial class MainWindow : Window
     private void Ratio025Click(object? sender, RoutedEventArgs e) => ViewModel.SetRatio(0.25);
     private async void AboutClick(object? sender, RoutedEventArgs e)
     {
+        string appVersion = typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "1.0.0";
         string avalonia = typeof(Avalonia.Application).Assembly.GetName().Version?.ToString(3) ?? "12.1.2";
         string imageSharp = typeof(SixLabors.ImageSharp.Image).Assembly.GetName().Version?.ToString(3) ?? "3.1.12";
         Window dialog = new()
@@ -62,7 +63,7 @@ public sealed partial class MainWindow : Window
                     Spacing = 10,
                     Children =
                     {
-                        new TextBlock { Text = ViewModel.Title, FontSize = 22, FontWeight = Avalonia.Media.FontWeight.Bold },
+                        new TextBlock { Text = $"{ViewModel.Title} v{appVersion}", FontSize = 22, FontWeight = Avalonia.Media.FontWeight.Bold },
                         new TextBlock { Text = $".NET 10 · Avalonia {avalonia} · ImageSharp {imageSharp} · FFmpeg 9.0.1 LGPL", TextWrapping = Avalonia.Media.TextWrapping.Wrap },
                         new TextBlock { Text = ViewModel.AboutBody, TextWrapping = Avalonia.Media.TextWrapping.Wrap }
                     }

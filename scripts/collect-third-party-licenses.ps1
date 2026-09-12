@@ -83,4 +83,12 @@ Configure and compiler options are recorded in FFMPEG-BUILD-CONFIG.txt.
 Source archive SHA-256: CF38E0E28C7E5605942C4A77755349B0145804A397AF37EB1FB4C77CB237F635
 "@ | Set-Content -LiteralPath (Join-Path $licensePath 'FFmpeg-CHANGES.txt') -Encoding utf8NoBOM
 
+@"
+Third-party licenses bundled with art3m1s_psv_port_tool v1.0.0
+
+This directory contains the license and copyright notices for runtime dependencies and credited reference projects.
+The application itself is licensed under GPL-3.0-or-later; see LICENSE in the package root.
+The exact FFmpeg 9.0.1 source archive and SHA-256 are published as separate assets on the same GitHub Release page.
+"@ | Set-Content -LiteralPath (Join-Path $licensePath 'README.txt') -Encoding utf8NoBOM
+
 Write-Host "Collected third-party licenses in $licensePath"
