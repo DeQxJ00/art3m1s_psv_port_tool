@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: Directory.Packages.props
+      - run: dotnet restore art3m1s_psv_port_tool.slnx
+      - run: dotnet build art3m1s_psv_port_tool.slnx -c Release --no-restore
+      - run: dotnet test art3m1s_psv_port_tool.slnx -c Release --no-build --logger trx
+      - run: dotnet format art3m1s_psv_port_tool.slnx --verify-no-changes --no-restore
+
+  native-aot:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: macos-13
+            rid: osx-x64
+          - os: macos-14
+            rid: osx-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: Directory.Packages.props
+      - run: dotnet publish src/Art3m1s.PsvTool.App/Art3m1s.PsvTool.App.csproj -c Release -r ${{ matrix.rid }} -p:PublishAot=true -p:PublishSingleFile=true -p:IlcGenerateCompleteTypeMetadata=false -o artifacts/${{ matrix.rid }}
+      - shell: pwsh
+        run: |
+          $binary = Get-ChildItem "artifacts/${{ matrix.rid }}" -File | Where-Object { $_.Extension -notin '.pdb','.dbg','.dSYM' } | Select-Object -First 1
+          if (-not $binary) { throw 'Native executable was not produced.' }
+          $process = Start-Process -FilePath $binary.FullName -ArgumentList '--self-test' -Wait -PassThru -NoNewWindow
+          if ($process.ExitCode -ne 0) { throw "Native self-test failed: $($process.ExitCode)" }
+
+  screenshots:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: Directory.Packages.props
+      - shell: pwsh
+        run: ./scripts/generate-screenshots.ps1
+      - shell: pwsh
+        run: |
+          $expected = @('ui-zh-CN-dark.png','ui-en-US-dark.png','ui-zh-CN-light.png','ui-en-US-light.png')
+          foreach ($name in $expected) {
+            $path = Join-Path 'docs/screenshots' $name
+            if (-not (Test-Path $path)) { throw "Missing $path" }
+            $bytes = [IO.File]::ReadAllBytes($path)
+            $width = [Net.IPAddress]::NetworkToHostOrder([BitConverter]::ToInt32($bytes,16))
+            $height = [Net.IPAddress]::NetworkToHostOrder([BitConverter]::ToInt32($bytes,20))
+            if ($width -ne 1180 -or $height -ne 1000) { throw "Unexpected dimensions for $path" }
+          }
+          git diff --exit-code -- docs/screenshots
+
+  readme-links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          test -f README.md && test -f README.en.md && test -f THIRD-PARTY-NOTICES.md
+          for image in ui-zh-CN-dark.png ui-en-US-dark.png ui-zh-CN-light.png ui-en-US-light.png; do test -f "docs/screenshots/$image"; done

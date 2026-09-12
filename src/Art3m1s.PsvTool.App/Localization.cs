@@ -1,0 +1,142 @@
+using System.Globalization;
+
+namespace Art3m1s.PsvTool.App;
+
+public interface ILocalizer
+{
+    string Language { get; }
+    string this[string key] { get; }
+    void SetLanguage(string language);
+    event EventHandler? LanguageChanged;
+}
+
+public sealed class Localizer : ILocalizer
+{
+    private static readonly IReadOnlyDictionary<string, string> Zh = new Dictionary<string, string>
+    {
+        ["Title"] = "art3m1s PSV 移植工具",
+        ["Subtitle"] = "Artemis 游戏资源缩小与 PFS 重打包",
+        ["Project"] = "项目",
+        ["Input"] = "输入目录",
+        ["Output"] = "输出目录",
+        ["Browse"] = "浏览…",
+        ["Scan"] = "扫描项目",
+        ["ScanEmpty"] = "等待扫描 PFS 文件",
+        ["Ratio"] = "缩小比例",
+        ["RatioHelp"] = "按游戏分辨率设置；游戏分辨率 × Ratio 接近 PSV 960×540（或 960×544）最佳。设置过大可能导致 PSV 内存不足。",
+        ["Original"] = "原始分辨率",
+        ["Target"] = "预计输出",
+        ["Unknown"] = "未知",
+        ["Types"] = "处理类型",
+        ["Text"] = "文本（INI / TBL / IPT / AST / LUA）",
+        ["Images"] = "图片（PNG）",
+        ["Animation"] = "动画（OGV）",
+        ["Video"] = "视频（WMV / DAT / MP4 / AVI / MPG / MKV）",
+        ["FontSubset"] = "字体削减（TTF）",
+        ["FontSubsetHelp"] = "保留脚本实际字符、常用符号及所选语言常用字；不支持的 CFF/TTC 字体原样保留。",
+        ["Simplified"] = "简体中文",
+        ["Japanese"] = "日文",
+        ["Traditional"] = "繁体中文",
+        ["Mode"] = "Mode 1：仅缩放",
+        ["ModeHelp"] = "图片使用 Bicubic 缩小；不执行 PNG 优化、调色板压缩或 waifu2x。",
+        ["Advanced"] = "高级设置",
+        ["Parallel"] = "并行任务",
+        ["Auto"] = "自动",
+        ["Encoding"] = "PFS 路径编码",
+        ["Log"] = "运行日志",
+        ["Ready"] = "准备就绪",
+        ["Start"] = "开始转换",
+        ["Cancel"] = "取消",
+        ["About"] = "关于",
+        ["AboutBody"] = "本程序采用 GPL-3.0-or-later，不提供任何担保。\n\npfs_upk（GPL-3.0）\nVisualNovelUpscaler（MIT）\nArtemisTools（GPL-3.0）\n\n详情见 LICENSE 与 THIRD-PARTY-NOTICES.md。",
+        ["Theme"] = "主题",
+        ["Dark"] = "深色",
+        ["Light"] = "浅色",
+        ["Archives"] = "个独立 PFS",
+        ["InvalidPaths"] = "请选择有效且不同的输入、输出目录。",
+        ["Overwrite"] = "输出目录已存在；再次点击开始将覆盖。",
+        ["Finished"] = "转换完成",
+        ["Failed"] = "转换失败",
+        ["Scanning"] = "正在扫描…",
+        ["NoPfs"] = "未找到有效 PFS。",
+        ["StageCopy"] = "正在复制项目文件…",
+        ["StageExtract"] = "正在解包 PFS…",
+        ["StagePack"] = "正在重新打包 PFS…",
+        ["StageLoose"] = "正在处理散装资源…",
+        ["StageResource"] = "正在转换资源…",
+        ["StageComplete"] = "转换完成",
+        ["DemoProgress"] = "正在转换 {0} · {1}%"
+    };
+
+    private static readonly IReadOnlyDictionary<string, string> En = new Dictionary<string, string>
+    {
+        ["Title"] = "art3m1s PSV Port Tool",
+        ["Subtitle"] = "Resize Artemis game assets and rebuild independent PFS archives",
+        ["Project"] = "Project",
+        ["Input"] = "Input folder",
+        ["Output"] = "Output folder",
+        ["Browse"] = "Browse…",
+        ["Scan"] = "Scan project",
+        ["ScanEmpty"] = "Waiting to scan PFS files",
+        ["Ratio"] = "Resize ratio",
+        ["RatioHelp"] = "Set from the game resolution. Game resolution × Ratio should approach PSV 960×540 (or 960×544). Larger output may exceed PSV memory.",
+        ["Original"] = "Original resolution",
+        ["Target"] = "Estimated output",
+        ["Unknown"] = "Unknown",
+        ["Types"] = "Asset types",
+        ["Text"] = "Text (INI / TBL / IPT / AST / LUA)",
+        ["Images"] = "Images (PNG)",
+        ["Animation"] = "Animation (OGV)",
+        ["Video"] = "Video (WMV / DAT / MP4 / AVI / MPG / MKV)",
+        ["FontSubset"] = "Font subsetting (TTF)",
+        ["FontSubsetHelp"] = "Keeps characters used by scripts, common symbols, and the selected language set. Unsupported CFF/TTC fonts stay unchanged.",
+        ["Simplified"] = "Simplified Chinese",
+        ["Japanese"] = "Japanese",
+        ["Traditional"] = "Traditional Chinese",
+        ["Mode"] = "Mode 1: Resize only",
+        ["ModeHelp"] = "Images use Bicubic resizing; no PNG optimization, palette compression, or waifu2x.",
+        ["Advanced"] = "Advanced",
+        ["Parallel"] = "Parallel tasks",
+        ["Auto"] = "Auto",
+        ["Encoding"] = "PFS path encoding",
+        ["Log"] = "Run log",
+        ["Ready"] = "Ready",
+        ["Start"] = "Start conversion",
+        ["Cancel"] = "Cancel",
+        ["About"] = "About",
+        ["AboutBody"] = "This program is GPL-3.0-or-later and comes with no warranty.\n\npfs_upk (GPL-3.0)\nVisualNovelUpscaler (MIT)\nArtemisTools (GPL-3.0)\n\nSee LICENSE and THIRD-PARTY-NOTICES.md.",
+        ["Theme"] = "Theme",
+        ["Dark"] = "Dark",
+        ["Light"] = "Light",
+        ["Archives"] = "independent PFS files",
+        ["InvalidPaths"] = "Choose valid, different input and output folders.",
+        ["Overwrite"] = "Output exists; click Start again to confirm replacement.",
+        ["Finished"] = "Conversion complete",
+        ["Failed"] = "Conversion failed",
+        ["Scanning"] = "Scanning…",
+        ["NoPfs"] = "No valid PFS archives found.",
+        ["StageCopy"] = "Copying project files…",
+        ["StageExtract"] = "Extracting PFS…",
+        ["StagePack"] = "Rebuilding PFS…",
+        ["StageLoose"] = "Processing loose assets…",
+        ["StageResource"] = "Converting assets…",
+        ["StageComplete"] = "Conversion complete",
+        ["DemoProgress"] = "Converting {0} · {1}%"
+    };
+
+    public string Language { get; private set; } = "zh-CN";
+    public string this[string key] => (Language == "en-US" ? En : Zh).TryGetValue(key, out string? value) ? value : key;
+    public event EventHandler? LanguageChanged;
+
+    public void SetLanguage(string language)
+    {
+        string normalized = language.Equals("en-US", StringComparison.OrdinalIgnoreCase) ? "en-US" : "zh-CN";
+        if (normalized == Language) return;
+        Language = normalized;
+        CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo(normalized);
+        LanguageChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public static IEnumerable<string> ChineseKeys => Zh.Keys;
+    public static IEnumerable<string> EnglishKeys => En.Keys;
+}

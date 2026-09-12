@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsAotCompatible>true</IsAotCompatible>
+    <IsTrimmable>true</IsTrimmable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="SixLabors.ImageSharp" />
+  </ItemGroup>
+  <ItemGroup Condition="Exists('..\..\third_party\ffmpeg\$(RuntimeIdentifier)')">
+    <EmbeddedResource Include="..\..\third_party\ffmpeg\$(RuntimeIdentifier)\*"
+                      LogicalName="Art3m1s.Tools.%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

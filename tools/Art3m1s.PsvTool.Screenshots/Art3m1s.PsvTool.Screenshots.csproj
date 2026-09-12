@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><SelfContained>true</SelfContained></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Headless" />
+    <PackageReference Include="Avalonia.Skia" />
+    <ProjectReference Include="..\..\src\Art3m1s.PsvTool.App\Art3m1s.PsvTool.App.csproj" />
+  </ItemGroup>
+</Project>

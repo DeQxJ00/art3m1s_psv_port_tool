@@ -1,0 +1,68 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Art3m1s.PsvTool.App.App"
+             RequestedThemeVariant="Dark">
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="WindowBg">#07101F</SolidColorBrush><SolidColorBrush x:Key="HeaderBg">#0B1629</SolidColorBrush>
+          <SolidColorBrush x:Key="CardBg">#101B2E</SolidColorBrush><SolidColorBrush x:Key="CardBorder">#253754</SolidColorBrush>
+          <SolidColorBrush x:Key="PrimaryText">#F3F7FF</SolidColorBrush><SolidColorBrush x:Key="SecondaryText">#91A6C7</SolidColorBrush>
+          <SolidColorBrush x:Key="SubtleBg">#0A1425</SolidColorBrush><SolidColorBrush x:Key="AccentBg">#082644</SolidColorBrush>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="WindowBg">#EEF3FA</SolidColorBrush><SolidColorBrush x:Key="HeaderBg">#FFFFFF</SolidColorBrush>
+          <SolidColorBrush x:Key="CardBg">#FFFFFF</SolidColorBrush><SolidColorBrush x:Key="CardBorder">#CDD8E8</SolidColorBrush>
+          <SolidColorBrush x:Key="PrimaryText">#142033</SolidColorBrush><SolidColorBrush x:Key="SecondaryText">#586C88</SolidColorBrush>
+          <SolidColorBrush x:Key="SubtleBg">#F3F6FA</SolidColorBrush><SolidColorBrush x:Key="AccentBg">#DCEEFF</SolidColorBrush>
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+  <Application.Styles>
+    <FluentTheme />
+    <Style Selector="Window">
+      <Setter Property="FontFamily" Value="Inter, Microsoft YaHei UI, Noto Sans CJK SC" />
+      <Setter Property="Background" Value="{DynamicResource WindowBg}" />
+    </Style>
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="{DynamicResource CardBg}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource CardBorder}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Padding" Value="18" />
+      <Setter Property="BoxShadow" Value="0 8 24 0 #18000000" />
+    </Style>
+    <Style Selector="TextBlock.sectionTitle">
+      <Setter Property="FontSize" Value="16" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource PrimaryText}" />
+    </Style>
+    <Style Selector="Button.primary">
+      <Setter Property="Background" Value="#087EFF" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Padding" Value="24,10" />
+      <Setter Property="CornerRadius" Value="8" />
+    </Style>
+    <Style Selector="Button">
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="14,8" />
+    </Style>
+    <Style Selector="TextBox">
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="MinHeight" Value="36" />
+    </Style>
+    <Style Selector="ComboBox">
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="MinHeight" Value="36" />
+    </Style>
+    <Style Selector="CheckBox">
+      <Setter Property="MinHeight" Value="30" />
+    </Style>
+    <Style Selector="Button.preset">
+      <Setter Property="Padding" Value="12,7" />
+      <Setter Property="CornerRadius" Value="7" />
+    </Style>
+  </Application.Styles>
+</Application>

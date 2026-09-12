@@ -1,0 +1,164 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  FFMPEG_VERSION: 9.0.1
+  FFMPEG_SOURCE_SHA256: CF38E0E28C7E5605942C4A77755349B0145804A397AF37EB1FB4C77CB237F635
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+            extension: .exe
+          - os: ubuntu-latest
+            rid: linux-x64
+            extension: ''
+          - os: macos-13
+            rid: osx-x64
+            extension: ''
+          - os: macos-14
+            rid: osx-arm64
+            extension: ''
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: Directory.Packages.props
+      - id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: ffmpeg-install
+          key: ffmpeg-${{ env.FFMPEG_VERSION }}-lgpl-${{ matrix.rid }}-v1
+      - shell: pwsh
+        run: |
+          Invoke-WebRequest "https://ffmpeg.org/releases/ffmpeg-${env:FFMPEG_VERSION}.tar.xz" -OutFile ffmpeg.tar.xz
+          $actual = (Get-FileHash ffmpeg.tar.xz -Algorithm SHA256).Hash
+          if ($actual -ne $env:FFMPEG_SOURCE_SHA256) { throw "FFmpeg source SHA-256 mismatch: $actual" }
+      - if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            base-devel
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-nasm
+      - if: runner.os != 'Windows' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -xf ffmpeg.tar.xz
+          cd "ffmpeg-${FFMPEG_VERSION}"
+          ./configure --prefix="$PWD/../ffmpeg-install" --disable-shared --enable-static --disable-doc --disable-debug --disable-autodetect --disable-gpl --disable-nonfree --extra-version=art3m1s-lgpl
+          make -j2
+          make install
+      - if: runner.os == 'Windows' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          tar -xf ffmpeg.tar.xz
+          cd "ffmpeg-${FFMPEG_VERSION}"
+          ./configure --prefix="$PWD/../ffmpeg-install" --disable-shared --enable-static --disable-doc --disable-debug --disable-autodetect --disable-gpl --disable-nonfree --extra-version=art3m1s-lgpl
+          make -j2
+          make install
+      - shell: pwsh
+        run: |
+          $toolDir = "third_party/ffmpeg/${{ matrix.rid }}"
+          New-Item -ItemType Directory -Force $toolDir | Out-Null
+          $suffix = '${{ matrix.extension }}'
+          Copy-Item "ffmpeg-install/bin/ffmpeg$suffix" "$toolDir/ffmpeg$suffix"
+          Copy-Item "ffmpeg-install/bin/ffprobe$suffix" "$toolDir/ffprobe$suffix"
+          foreach ($tool in @("ffmpeg$suffix","ffprobe$suffix")) {
+            $hash = (Get-FileHash "$toolDir/$tool" -Algorithm SHA256).Hash
+            "$hash  $tool" | Set-Content "$toolDir/$tool.sha256" -NoNewline
+          }
+          & "$toolDir/ffmpeg$suffix" -hide_banner -buildconf 2>&1 | Out-File "$toolDir/BUILD-CONFIG.txt"
+          $config = Get-Content "$toolDir/BUILD-CONFIG.txt" -Raw
+          if ($config -match '--enable-gpl|--enable-nonfree') { throw 'Non-LGPL FFmpeg configuration detected.' }
+      - run: dotnet test art3m1s_psv_port_tool.slnx -c Release
+      - run: dotnet publish src/Art3m1s.PsvTool.App/Art3m1s.PsvTool.App.csproj -c Release -r ${{ matrix.rid }} -p:PublishAot=true -p:PublishSingleFile=true -o publish/${{ matrix.rid }}
+      - shell: pwsh
+        run: |
+          $suffix = '${{ matrix.extension }}'
+          $binary = (Resolve-Path "publish/${{ matrix.rid }}/Art3m1s.PsvTool.App$suffix").Path
+          $process = Start-Process -FilePath $binary -ArgumentList '--self-test' -Wait -PassThru -NoNewWindow
+          if ($process.ExitCode -ne 0) { throw "Native self-test failed: $($process.ExitCode)" }
+      - shell: pwsh
+        run: |
+          Copy-Item LICENSE,THIRD-PARTY-NOTICES.md "publish/${{ matrix.rid }}"
+          Copy-Item "third_party/ffmpeg/${{ matrix.rid }}/BUILD-CONFIG.txt" "publish/${{ matrix.rid }}/FFMPEG-BUILD-CONFIG.txt"
+          Copy-Item ffmpeg.tar.xz "publish/${{ matrix.rid }}/ffmpeg-${env:FFMPEG_VERSION}.tar.xz"
+          if ('${{ matrix.rid }}' -eq 'win-x64') {
+            $files = @(
+              "publish/${{ matrix.rid }}/Art3m1s.PsvTool.App.exe",
+              "publish/${{ matrix.rid }}/LICENSE",
+              "publish/${{ matrix.rid }}/THIRD-PARTY-NOTICES.md",
+              "publish/${{ matrix.rid }}/FFMPEG-BUILD-CONFIG.txt",
+              "publish/${{ matrix.rid }}/ffmpeg-${env:FFMPEG_VERSION}.tar.xz"
+            )
+            Compress-Archive -Path $files -DestinationPath "art3m1s_psv_port_tool-${{ matrix.rid }}.zip"
+          }
+      - if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          chmod +x publish/${{ matrix.rid }}/Art3m1s.PsvTool.App
+          cd publish/${{ matrix.rid }}
+          zip -9 ../../art3m1s_psv_port_tool-${{ matrix.rid }}.zip Art3m1s.PsvTool.App LICENSE THIRD-PARTY-NOTICES.md FFMPEG-BUILD-CONFIG.txt ffmpeg-${FFMPEG_VERSION}.tar.xz
+      - if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          app=bundle/art3m1s_psv_port_tool.app/Contents
+          mkdir -p "$app/MacOS" "$app/Resources"
+          cp packaging/macos/Info.plist "$app/Info.plist"
+          cp publish/${{ matrix.rid }}/Art3m1s.PsvTool.App "$app/MacOS/art3m1s_psv_port_tool"
+          find publish/${{ matrix.rid }} -maxdepth 1 -name '*.dylib' -exec cp {} "$app/MacOS/" \;
+          chmod +x "$app/MacOS/art3m1s_psv_port_tool"
+          cp publish/${{ matrix.rid }}/LICENSE publish/${{ matrix.rid }}/THIRD-PARTY-NOTICES.md publish/${{ matrix.rid }}/FFMPEG-BUILD-CONFIG.txt publish/${{ matrix.rid }}/ffmpeg-${FFMPEG_VERSION}.tar.xz "$app/Resources"
+          cd bundle
+          zip -9yr ../art3m1s_psv_port_tool-${{ matrix.rid }}.app.zip art3m1s_psv_port_tool.app
+      - uses: anchore/sbom-action@v0
+        with:
+          path: publish/${{ matrix.rid }}
+          format: spdx-json
+          output-file: art3m1s_psv_port_tool-${{ matrix.rid }}.spdx.json
+      - shell: pwsh
+        run: |
+          $archive = Get-ChildItem "art3m1s_psv_port_tool-${{ matrix.rid }}*.zip" | Select-Object -First 1
+          (Get-FileHash $archive -Algorithm SHA256).Hash + "  " + $archive.Name | Set-Content "SHA256-${{ matrix.rid }}.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.rid }}
+          path: |
+            art3m1s_psv_port_tool-${{ matrix.rid }}*.zip
+            art3m1s_psv_port_tool-${{ matrix.rid }}.spdx.json
+            SHA256-${{ matrix.rid }}.txt
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist
+      - run: cat dist/SHA256-*.txt > dist/SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDisplayName</key><string>art3m1s PSV Port Tool</string>
+  <key>CFBundleExecutable</key><string>art3m1s_psv_port_tool</string>
+  <key>CFBundleIdentifier</key><string>io.github.deqxj00.art3m1s-psv-port-tool</string>
+  <key>CFBundleName</key><string>art3m1s_psv_port_tool</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>1.0.0</string>
+  <key>LSMinimumSystemVersion</key><string>12.0</string>
+  <key>NSHighResolutionCapable</key><true/>
+</dict>
+</plist>

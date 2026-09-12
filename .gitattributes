@@ -1,0 +1,7 @@
+* text=auto eol=lf
+*.slnx text eol=lf
+*.cs text eol=lf
+*.axaml text eol=lf
+*.ps1 text eol=crlf
+*.png binary
+*.pfs binary

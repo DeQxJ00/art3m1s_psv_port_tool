@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <PublishAot>true</PublishAot>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <StripSymbols Condition="'$(PublishAot)' == 'true'">true</StripSymbols>
+    <DebugType Condition="'$(PublishAot)' == 'true'">None</DebugType>
+    <DebugSymbols Condition="'$(PublishAot)' == 'true'">false</DebugSymbols>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="Optris.StaticGraphics.Avalonia.Software" />
+    <ProjectReference Include="..\Art3m1s.PsvTool.Core\Art3m1s.PsvTool.Core.csproj" />
+  </ItemGroup>
+  <PropertyGroup>
+    <OptrisStaticGraphicsAcknowledgeReducedTier>true</OptrisStaticGraphicsAcknowledgeReducedTier>
+    <OptrisStaticGraphicsRequiredBackends>Software</OptrisStaticGraphicsRequiredBackends>
+  </PropertyGroup>
+</Project>

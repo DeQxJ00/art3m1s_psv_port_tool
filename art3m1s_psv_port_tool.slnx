@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="src/Art3m1s.PsvTool.Core/Art3m1s.PsvTool.Core.csproj" />
+  <Project Path="src/Art3m1s.PsvTool.App/Art3m1s.PsvTool.App.csproj" />
+  <Project Path="tests/Art3m1s.PsvTool.Core.Tests/Art3m1s.PsvTool.Core.Tests.csproj" />
+  <Project Path="tests/Art3m1s.PsvTool.Ui.Tests/Art3m1s.PsvTool.Ui.Tests.csproj" />
+</Solution>

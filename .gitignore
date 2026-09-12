@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+.vs/
+.idea/
+.vscode/
+artifacts/
+TestResults/
+*.user
+*.suo
+**/packages.lock.json
+tools/ffmpeg/**/bin/
+!tools/ffmpeg/manifest.json
