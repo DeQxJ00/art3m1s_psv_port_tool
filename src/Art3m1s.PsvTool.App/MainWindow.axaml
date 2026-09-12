@@ -56,7 +56,7 @@
           <StackPanel Spacing="13">
             <TextBlock Text="{Binding RatioLabel}" Classes="sectionTitle" />
             <Grid ColumnDefinitions="120,*" ColumnSpacing="12">
-              <TextBox Text="{Binding Ratio}" FontSize="22" HorizontalContentAlignment="Center" />
+              <TextBox Text="{Binding Ratio, UpdateSourceTrigger=PropertyChanged}" FontSize="22" HorizontalContentAlignment="Center" />
               <WrapPanel Grid.Column="1" VerticalAlignment="Center">
                 <Button Content="0.75 · 720p" Click="Ratio075Click" Classes="preset" Margin="0,0,6,6" />
                 <Button Content="0.5 · 1080p" Click="Ratio05Click" Classes="preset" Margin="0,0,6,6" />

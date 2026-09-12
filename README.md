@@ -35,7 +35,7 @@ Release 提供 `win-x64`、`linux-x64` NativeAOT 单文件，以及未签名、�
 ## 资源处理规则
 
 - 文本：INI / TBL / IPT / AST / LUA 的 Artemis 坐标、尺寸与字号按 Ratio 缩放，保留 UTF-8 / Shift_JIS、BOM 和换行；IET 原样复制。
-- 图片：PNG 使用 ImageSharp Bicubic，仅缩放，不进行 PNG 优化、调色板压缩、waifu2x 或有损压缩。
+- 图片：PNG 使用 ImageSharp 的 Alpha 预乘高质量 Bicubic，仅缩放，不进行 PNG 优化、调色板压缩、waifu2x 或有损压缩。
 - 动画：OGV 使用 FFmpeg Bicubic，保持帧率与音频。
 - 视频：WMV / DAT / MP4 / AVI / MPG / MKV 尽量保持原视频编码并复制音频；WMV3 转为 WMV2。
 - 字体（可选）：对 TrueType `glyf` 字体按简体中文、日文或繁体中文常用范围削减轮廓，同时始终保留脚本中实际出现的字符、ASCII、常用标点与全角/半角符号；复合字形依赖会递归保留。CFF/CFF2、TTC 与可变字体为避免损坏会原样保留。
@@ -45,7 +45,7 @@ Release 提供 `win-x64`、`linux-x64` NativeAOT 单文件，以及未签名、�
 
 ## PNG 颜色表与透明度保证
 
-RGB24 输出仍为 RGB24，不增加 Alpha；RGBA、灰度、透明灰度保持颜色类型。索引色保持原 1/2/4/8-bit 位深，原 `PLTE` 与 `tRNS` 块逐字节写回，不修改、重排或删减自带颜色表。Bicubic 结果仅映射回原颜色表并重写像素索引。PNG 坐标文本按 Ratio 缩放，其他元数据尽量保留。
+RGB24 输出仍为 RGB24，不增加 Alpha；RGBA、灰度、透明灰度保持颜色类型。索引色保持原 1/2/4/8-bit 位深，原 `PLTE` 与 `tRNS` 块逐字节写回，不修改、重排或删减自带颜色表。Bicubic 结果仅映射回原颜色表并重写像素索引。PNG 坐标文本按 Ratio 缩放；除图像尺寸、像素数据和坐标文本外，其余 PNG 块逐字节保留。
 
 ## 构建、测试和 GitHub Actions
 

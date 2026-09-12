@@ -69,7 +69,7 @@ public sealed class PngProcessor : IPngProcessor
         }
 
         using Image<Rgba32> image = Image.Load<Rgba32>(source);
-        image.Mutate(context => context.Resize(width, height, KnownResamplers.Bicubic));
+        image.Mutate(context => context.Resize(CreateResizeOptions(width, height)));
         byte[] scanlines = new byte[checked(height * (1 + ((width * document.BitDepth + 7) / 8)))];
         Dictionary<uint, byte> colorCache = new();
         image.ProcessPixelRows(accessor =>
@@ -118,7 +118,7 @@ public sealed class PngProcessor : IPngProcessor
                 }
                 continue;
             }
-            byte[] data = chunk.Type == "tEXt" ? ScaleTextChunk(chunk.Data, ratio) : chunk.Data;
+            byte[] data = ScaleTextualChunk(chunk, ratio);
             await WriteChunkAsync(output, chunk.Type, data, cancellationToken);
         }
         if (!wroteData)
@@ -153,45 +153,69 @@ public sealed class PngProcessor : IPngProcessor
             CompressionLevel = PngCompressionLevel.DefaultCompression,
             FilterMethod = PngFilterMethod.Adaptive
         };
+        using MemoryStream resized = new();
         if (document.BitDepth == 16)
         {
-            if (document.ColorType == 0) ResizeAndSave<L16>(source, width, height, ratio, outputPath, encoder);
-            else if (document.ColorType == 2) ResizeAndSave<Rgb48>(source, width, height, ratio, outputPath, encoder);
-            else if (document.ColorType == 4) ResizeAndSave<La32>(source, width, height, ratio, outputPath, encoder);
-            else ResizeAndSave<Rgba64>(source, width, height, ratio, outputPath, encoder);
+            if (document.ColorType == 0) ResizeAndSave<L16>(source, width, height, resized, encoder);
+            else if (document.ColorType == 2) ResizeAndSave<Rgb48>(source, width, height, resized, encoder);
+            else if (document.ColorType == 4) ResizeAndSave<La32>(source, width, height, resized, encoder);
+            else ResizeAndSave<Rgba64>(source, width, height, resized, encoder);
         }
         else
         {
-            if (document.ColorType == 0) ResizeAndSave<L8>(source, width, height, ratio, outputPath, encoder);
-            else if (document.ColorType == 2) ResizeAndSave<Rgb24>(source, width, height, ratio, outputPath, encoder);
-            else if (document.ColorType == 4) ResizeAndSave<La16>(source, width, height, ratio, outputPath, encoder);
-            else ResizeAndSave<Rgba32>(source, width, height, ratio, outputPath, encoder);
+            if (document.ColorType == 0) ResizeAndSave<L8>(source, width, height, resized, encoder);
+            else if (document.ColorType == 2) ResizeAndSave<Rgb24>(source, width, height, resized, encoder);
+            else if (document.ColorType == 4) ResizeAndSave<La16>(source, width, height, resized, encoder);
+            else ResizeAndSave<Rgba32>(source, width, height, resized, encoder);
         }
+
+        PngDocument encoded = PngDocument.Parse(resized.ToArray());
+        using FileStream output = new(outputPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        output.Write(Signature);
+        WriteChunk(output, "IHDR", encoded.Ihdr);
+        byte[] imageData = encoded.Chunks.Where(static chunk => chunk.Type == "IDAT")
+            .SelectMany(static chunk => chunk.Data).ToArray();
+        bool wroteData = false;
+        foreach (PngChunk chunk in document.Chunks.Skip(1))
+        {
+            if (chunk.Type is "IHDR" or "IEND")
+                continue;
+            if (chunk.Type == "IDAT")
+            {
+                if (!wroteData)
+                {
+                    WriteChunk(output, "IDAT", imageData);
+                    wroteData = true;
+                }
+                continue;
+            }
+            WriteChunk(output, chunk.Type, ScaleTextualChunk(chunk, ratio));
+        }
+        if (!wroteData)
+            WriteChunk(output, "IDAT", imageData);
+        WriteChunk(output, "IEND", []);
     }
 
-    private static void ResizeAndSave<TPixel>(byte[] source, int width, int height, double ratio, string outputPath, PngEncoder encoder)
+    private static void ResizeAndSave<TPixel>(byte[] source, int width, int height, Stream output, PngEncoder encoder)
         where TPixel : unmanaged, IPixel<TPixel>
     {
         using Image<TPixel> image = Image.Load<TPixel>(source);
-        image.Mutate(context => context.Resize(width, height, KnownResamplers.Bicubic));
-        ScalePngTextMetadata(image.Metadata.GetPngMetadata(), ratio);
-        image.Save(outputPath, encoder);
+        image.Mutate(context => context.Resize(CreateResizeOptions(width, height)));
+        image.Save(output, encoder);
     }
 
-    private static void ScalePngTextMetadata(PngMetadata metadata, double ratio)
+    private static ResizeOptions CreateResizeOptions(int width, int height) => new()
     {
-        if (metadata.TextData.Count == 0)
-            return;
-        PngTextData[] entries = metadata.TextData.ToArray();
-        metadata.TextData.Clear();
-        foreach (PngTextData entry in entries)
-            metadata.TextData.Add(new PngTextData(entry.Keyword, ScaleCoordinateList(entry.Value, ratio), entry.LanguageTag, entry.TranslatedKeyword));
-    }
+        Size = new Size(width, height),
+        Mode = ResizeMode.Stretch,
+        Sampler = KnownResamplers.Bicubic,
+        Compand = false,
+        PremultiplyAlpha = true
+    };
 
     private static byte FindNearestPaletteIndex(Rgba32 color, Rgba32[] palette, Dictionary<uint, byte> cache)
     {
-        uint key = ((uint)(color.R >> 3) << 15) | ((uint)(color.G >> 3) << 10) |
-                   ((uint)(color.B >> 3) << 5) | (uint)(color.A >> 3);
+        uint key = (uint)color.R | ((uint)color.G << 8) | ((uint)color.B << 16) | ((uint)color.A << 24);
         if (cache.TryGetValue(key, out byte cached))
             return cached;
 
@@ -229,6 +253,17 @@ public sealed class PngProcessor : IPngProcessor
         row[bitOffset / 8] |= checked((byte)((index & mask) << shift));
     }
 
+    private static byte[] ScaleTextualChunk(PngChunk chunk, double ratio)
+    {
+        return chunk.Type switch
+        {
+            "tEXt" => ScaleTextChunk(chunk.Data, ratio),
+            "zTXt" => ScaleCompressedTextChunk(chunk.Data, ratio),
+            "iTXt" => ScaleInternationalTextChunk(chunk.Data, ratio),
+            _ => chunk.Data
+        };
+    }
+
     private static byte[] ScaleTextChunk(byte[] data, double ratio)
     {
         int separator = Array.IndexOf(data, (byte)0);
@@ -243,6 +278,74 @@ public sealed class PngProcessor : IPngProcessor
         data.AsSpan(0, separator + 1).CopyTo(result);
         encoded.CopyTo(result, separator + 1);
         return result;
+    }
+
+    private static byte[] ScaleCompressedTextChunk(byte[] data, double ratio)
+    {
+        int separator = Array.IndexOf(data, (byte)0);
+        if (separator < 1 || separator + 2 > data.Length || data[separator + 1] != 0)
+            return data;
+        byte[] decoded;
+        try { decoded = Decompress(data.AsSpan(separator + 2)); }
+        catch (InvalidDataException) { return data; }
+        string value = Encoding.Latin1.GetString(decoded);
+        string scaled = ScaleCoordinateList(value, ratio);
+        if (scaled == value)
+            return data;
+        byte[] compressed = Compress(Encoding.Latin1.GetBytes(scaled));
+        byte[] result = new byte[separator + 2 + compressed.Length];
+        data.AsSpan(0, separator + 2).CopyTo(result);
+        compressed.CopyTo(result, separator + 2);
+        return result;
+    }
+
+    private static byte[] ScaleInternationalTextChunk(byte[] data, double ratio)
+    {
+        int keywordEnd = Array.IndexOf(data, (byte)0);
+        if (keywordEnd < 1 || keywordEnd + 3 > data.Length)
+            return data;
+        byte compressionFlag = data[keywordEnd + 1];
+        if (compressionFlag > 1 || data[keywordEnd + 2] != 0)
+            return data;
+        int languageEnd = Array.IndexOf(data, (byte)0, keywordEnd + 3);
+        if (languageEnd < 0)
+            return data;
+        int translatedEnd = Array.IndexOf(data, (byte)0, languageEnd + 1);
+        if (translatedEnd < 0)
+            return data;
+        int textStart = translatedEnd + 1;
+        byte[] encodedText = data.AsSpan(textStart).ToArray();
+        byte[] decoded;
+        try { decoded = compressionFlag == 1 ? Decompress(encodedText) : encodedText; }
+        catch (InvalidDataException) { return data; }
+        string value = Encoding.UTF8.GetString(decoded);
+        string scaled = ScaleCoordinateList(value, ratio);
+        if (scaled == value)
+            return data;
+        byte[] replacement = Encoding.UTF8.GetBytes(scaled);
+        if (compressionFlag == 1)
+            replacement = Compress(replacement);
+        byte[] result = new byte[textStart + replacement.Length];
+        data.AsSpan(0, textStart).CopyTo(result);
+        replacement.CopyTo(result, textStart);
+        return result;
+    }
+
+    private static byte[] Decompress(ReadOnlySpan<byte> source)
+    {
+        using MemoryStream input = new(source.ToArray());
+        using ZLibStream zlib = new(input, CompressionMode.Decompress);
+        using MemoryStream output = new();
+        zlib.CopyTo(output);
+        return output.ToArray();
+    }
+
+    private static byte[] Compress(ReadOnlySpan<byte> source)
+    {
+        using MemoryStream output = new();
+        using (ZLibStream zlib = new(output, CompressionLevel.Optimal, true))
+            zlib.Write(source);
+        return output.ToArray();
     }
 
     private static string ScaleCoordinateList(string value, double ratio)
@@ -274,6 +377,18 @@ public sealed class PngProcessor : IPngProcessor
         uint crc = Crc32.Compute(typeBytes, data);
         BinaryPrimitives.WriteUInt32BigEndian(length, crc);
         await output.WriteAsync(length, cancellationToken);
+    }
+
+    private static void WriteChunk(Stream output, string type, byte[] data)
+    {
+        byte[] typeBytes = Encoding.ASCII.GetBytes(type);
+        Span<byte> value = stackalloc byte[4];
+        BinaryPrimitives.WriteUInt32BigEndian(value, checked((uint)data.Length));
+        output.Write(value);
+        output.Write(typeBytes);
+        output.Write(data);
+        BinaryPrimitives.WriteUInt32BigEndian(value, Crc32.Compute(typeBytes, data));
+        output.Write(value);
     }
 
     private sealed record PngChunk(string Type, byte[] Data);

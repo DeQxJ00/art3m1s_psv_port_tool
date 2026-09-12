@@ -2,6 +2,9 @@ using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Text;
 using Art3m1s.PsvTool.Core;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats.Png;
+using SixLabors.ImageSharp.PixelFormats;
 using Xunit;
 
 namespace Art3m1s.PsvTool.Core.Tests;
@@ -76,6 +79,33 @@ public sealed class CoreTests : IDisposable
         Assert.Equal(depthBefore, depthAfter); Assert.Equal(plteBefore, plteAfter); Assert.Equal(trnsBefore, trnsAfter);
         Assert.Equal(4u, BinaryPrimitives.ReadUInt32BigEndian(result.AsSpan(16, 4)));
         Assert.Equal(4u, BinaryPrimitives.ReadUInt32BigEndian(result.AsSpan(20, 4)));
+    }
+
+    [Fact]
+    public async Task RgbPngStaysRgbAndKeepsAncillaryChunksByteForByte()
+    {
+        string path = Path.Combine(_root, "rgb.png");
+        using (Image<Rgb24> image = new(10, 6, new Rgb24(20, 40, 60)))
+        {
+            using MemoryStream encoded = new();
+            image.Save(encoded, new PngEncoder { ColorType = PngColorType.Rgb });
+            byte[] png = encoded.ToArray();
+            byte[] customChunk = [0, 0, 14, 196, 0, 0, 14, 196, 1];
+            int idatOffset = FindChunkOffset(png, "IDAT");
+            using MemoryStream withMetadata = new();
+            withMetadata.Write(png.AsSpan(0, idatOffset));
+            WriteChunk(withMetadata, "pHYs", customChunk);
+            withMetadata.Write(png.AsSpan(idatOffset));
+            await File.WriteAllBytesAsync(path, withMetadata.ToArray());
+        }
+
+        await new PngProcessor().ResizeAsync(path, 0.5);
+
+        byte[] result = await File.ReadAllBytesAsync(path);
+        Assert.Equal(2, result[25]);
+        Assert.Equal(5u, BinaryPrimitives.ReadUInt32BigEndian(result.AsSpan(16, 4)));
+        Assert.Equal(3u, BinaryPrimitives.ReadUInt32BigEndian(result.AsSpan(20, 4)));
+        Assert.Equal(new byte[] { 0, 0, 14, 196, 0, 0, 14, 196, 1 }, ReadChunk(result, "pHYs"));
     }
 
     [Fact]
@@ -177,6 +207,25 @@ public sealed class CoreTests : IDisposable
         byte depth = png[24]; byte[] palette = [], transparency = []; int offset = 8;
         while (offset < png.Length) { int length = (int)BinaryPrimitives.ReadUInt32BigEndian(png.AsSpan(offset)); string type = Encoding.ASCII.GetString(png, offset + 4, 4); byte[] data = png.AsSpan(offset + 8, length).ToArray(); if (type == "PLTE") palette = data; if (type == "tRNS") transparency = data; offset += 12 + length; }
         return (depth, palette, transparency);
+    }
+
+    private static int FindChunkOffset(byte[] png, string wanted)
+    {
+        int offset = 8;
+        while (offset <= png.Length - 12)
+        {
+            int length = checked((int)BinaryPrimitives.ReadUInt32BigEndian(png.AsSpan(offset)));
+            if (Encoding.ASCII.GetString(png, offset + 4, 4) == wanted) return offset;
+            offset += length + 12;
+        }
+        throw new InvalidDataException($"PNG chunk {wanted} was not found.");
+    }
+
+    private static byte[] ReadChunk(byte[] png, string wanted)
+    {
+        int offset = FindChunkOffset(png, wanted);
+        int length = checked((int)BinaryPrimitives.ReadUInt32BigEndian(png.AsSpan(offset)));
+        return png.AsSpan(offset + 8, length).ToArray();
     }
 
     private static void WriteChunk(Stream output, string type, byte[] data)

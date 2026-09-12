@@ -35,7 +35,7 @@ The default is `0.5`; valid input is `0 < Ratio ≤ 1`. Presets are `0.75 · 720
 ## Asset processing rules
 
 - Text: scales common Artemis coordinates, sizes, and font values in INI / TBL / IPT / AST / LUA while preserving UTF-8 / Shift_JIS, BOM, and line endings. IET is copied unchanged.
-- Images: ImageSharp Bicubic PNG resize only. No PNG optimization, palette compression, waifu2x, or lossy compression.
+- Images: high-quality alpha-premultiplied ImageSharp Bicubic PNG resize only. No PNG optimization, palette compression, waifu2x, or lossy compression.
 - Animation: Bicubic OGV resize through FFmpeg, retaining frame rate and audio.
 - Video: WMV / DAT / MP4 / AVI / MPG / MKV retain the original video codec where encodable and copy audio; WMV3 becomes WMV2.
 - Fonts (optional): trims TrueType `glyf` outlines to common Simplified Chinese, Japanese, or Traditional Chinese sets while always retaining characters actually used by scripts, ASCII, common punctuation, and full/half-width symbols. Composite dependencies are retained recursively. CFF/CFF2, TTC, and variable fonts remain unchanged for safety.
@@ -45,7 +45,7 @@ Default parallelism is `max(1, logical CPU count - 1)`, with at most two simulta
 
 ## PNG palette and transparency guarantees
 
-RGB24 stays RGB24 without Alpha; RGBA, grayscale, and transparent grayscale retain their color type. Indexed PNGs keep their original 1/2/4/8-bit depth. Original `PLTE` and `tRNS` chunks are written back byte-for-byte—the built-in palette is never edited, reordered, or reduced. Bicubic pixels are mapped back to the original palette and only pixel indices change. PNG coordinate text is scaled; other metadata is retained where possible.
+RGB24 stays RGB24 without Alpha; RGBA, grayscale, and transparent grayscale retain their color type. Indexed PNGs keep their original 1/2/4/8-bit depth. Original `PLTE` and `tRNS` chunks are written back byte-for-byte—the built-in palette is never edited, reordered, or reduced. Bicubic pixels are mapped back to the original palette and only pixel indices change. PNG coordinate text is scaled; every other PNG chunk is retained byte-for-byte apart from dimensions and image data.
 
 ## Build, tests, and GitHub Actions
 

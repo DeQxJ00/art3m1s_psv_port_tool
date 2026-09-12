@@ -8,8 +8,8 @@
   <key>CFBundleIconFile</key><string>app-icon.icns</string>
   <key>CFBundleName</key><string>art3m1s_psv_port_tool</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.0.0</string>
-  <key>CFBundleVersion</key><string>1.0.0</string>
+  <key>CFBundleShortVersionString</key><string>1.0.2</string>
+  <key>CFBundleVersion</key><string>1.0.2</string>
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict>
