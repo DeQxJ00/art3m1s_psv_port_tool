@@ -80,4 +80,3 @@ dotnet publish src/Art3m1s.PsvTool.App -c Release -r win-x64
 | **Optris.StaticGraphics.Avalonia.Software** | MIT fork 及上游组件许可证 | NativeAOT 静态 Skia / HarfBuzz 图形后端 | [NuGet](https://www.nuget.org/packages/Optris.StaticGraphics.Avalonia.Software) |
 | **FFmpeg / ffprobe** | LGPL-2.1-or-later 构建 | 动画与视频探测、缩放及转码（9.0.1） | [FFmpeg 9.0.1 源码](https://ffmpeg.org/releases/ffmpeg-9.0.1.tar.xz) |
 
-正式发布包的 `licenses` 目录附带运行时第三方组件的许可证与版权声明，其中包含 FFmpeg 的未修改源码说明；包内另有 `FFMPEG-BUILD-CONFIG.txt`。对应的 `ffmpeg-9.0.1.tar.xz` 源码和源码 SHA-256 作为 GitHub Release 独立附件提供。完整清单见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。

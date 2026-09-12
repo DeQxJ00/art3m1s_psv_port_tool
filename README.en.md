@@ -80,4 +80,3 @@ Thanks to the following open-source projects.
 | **Optris.StaticGraphics.Avalonia.Software** | MIT fork and upstream component licenses | Static Skia / HarfBuzz graphics backend for NativeAOT | [NuGet](https://www.nuget.org/packages/Optris.StaticGraphics.Avalonia.Software) |
 | **FFmpeg / ffprobe** | LGPL-2.1-or-later build | Animation/video probing, resizing, and transcoding (9.0.1) | [FFmpeg 9.0.1 source](https://ffmpeg.org/releases/ffmpeg-9.0.1.tar.xz) |
 
-Official packages include runtime third-party licenses and copyright notices in the `licenses` directory, including the FFmpeg unmodified-source statement; `FFMPEG-BUILD-CONFIG.txt` is included beside that directory. The corresponding `ffmpeg-9.0.1.tar.xz` source archive and its SHA-256 are published as separate GitHub Release assets. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for the complete inventory.
