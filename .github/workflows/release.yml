@@ -159,7 +159,7 @@ jobs:
         run: |
           $archive = Get-ChildItem "art3m1s_psv_port_tool-${{ matrix.rid }}*.zip" | Select-Object -First 1
           (Get-FileHash $archive -Algorithm SHA256).Hash + "  " + $archive.Name | Set-Content "SHA256-${{ matrix.rid }}.txt"
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.rid }}
           path: |
@@ -176,7 +176,7 @@ jobs:
           $actual = (Get-FileHash "ffmpeg-${env:FFMPEG_VERSION}.tar.xz" -Algorithm SHA256).Hash
           if ($actual -ne $env:FFMPEG_SOURCE_SHA256) { throw "FFmpeg source SHA-256 mismatch: $actual" }
           "$actual  ffmpeg-${env:FFMPEG_VERSION}.tar.xz" | Set-Content FFMPEG-SOURCE-SHA256.txt -NoNewline
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: release-ffmpeg-source
           path: |
@@ -188,7 +188,7 @@ jobs:
     needs: [build, ffmpeg-source]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v7
         with:
           pattern: release-*
           merge-multiple: true
