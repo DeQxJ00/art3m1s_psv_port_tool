@@ -50,19 +50,22 @@ public sealed partial class MainWindow : Window
         Window dialog = new()
         {
             Title = ViewModel.AboutLabel,
-            Width = 520,
-            Height = 340,
+            Width = 620,
+            Height = 520,
             CanResize = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Content = new StackPanel
+            Content = new ScrollViewer
             {
                 Margin = new Avalonia.Thickness(26),
-                Spacing = 10,
-                Children =
+                Content = new StackPanel
                 {
-                    new TextBlock { Text = ViewModel.Title, FontSize = 22, FontWeight = Avalonia.Media.FontWeight.Bold },
-                    new TextBlock { Text = $".NET 10 · Avalonia {avalonia} · ImageSharp {imageSharp} · FFmpeg 9.0.1 LGPL", TextWrapping = Avalonia.Media.TextWrapping.Wrap },
-                    new TextBlock { Text = ViewModel.AboutBody, TextWrapping = Avalonia.Media.TextWrapping.Wrap }
+                    Spacing = 10,
+                    Children =
+                    {
+                        new TextBlock { Text = ViewModel.Title, FontSize = 22, FontWeight = Avalonia.Media.FontWeight.Bold },
+                        new TextBlock { Text = $".NET 10 · Avalonia {avalonia} · ImageSharp {imageSharp} · FFmpeg 9.0.1 LGPL", TextWrapping = Avalonia.Media.TextWrapping.Wrap },
+                        new TextBlock { Text = ViewModel.AboutBody, TextWrapping = Avalonia.Media.TextWrapping.Wrap }
+                    }
                 }
             }
         };

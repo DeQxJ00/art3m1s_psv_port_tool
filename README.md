@@ -32,10 +32,6 @@ Release 提供 `win-x64`、`linux-x64` NativeAOT 单文件，以及未签名、�
 
 默认 `0.5`，允许输入 `0 < Ratio ≤ 1`。参考按钮为 `0.75 · 720p`、`0.5 · 1080p`、`0.375 · 2K`、`0.25 · 4K`。以“原游戏分辨率 × Ratio”接近 PSV 的 `960×540`（或 `960×544`）为宜；设置过大会增加显存和内存压力。分辨率从根目录 `system.ini` 的 `[WINDOWS]` 读取；无法读取时可参考解包后的 `image/bg` PNG。
 
-## PFS 文件识别规则
-
-根目录中名称匹配 `xxxxx.pfs` 或 `xxxxx.pfs.000`–`.999` 且文件头为 `pf2`、`pf6`、`pf8` 的文件会被处理。数字允许跳号，也允许多个前缀。每个现有物理文件都是独立归档：不拼接、不补号、不改名，条目顺序、原始路径字节与目录结构保持不变，输出统一为加密 `pf8`。解包会阻止绝对路径及 `..` 路径穿越。
-
 ## 资源处理规则
 
 - 文本：INI / TBL / IPT / AST / LUA 的 Artemis 坐标、尺寸与字号按 Ratio 缩放，保留 UTF-8 / Shift_JIS、BOM 和换行；IET 原样复制。
@@ -50,10 +46,6 @@ Release 提供 `win-x64`、`linux-x64` NativeAOT 单文件，以及未签名、�
 ## PNG 颜色表与透明度保证
 
 RGB24 输出仍为 RGB24，不增加 Alpha；RGBA、灰度、透明灰度保持颜色类型。索引色保持原 1/2/4/8-bit 位深，原 `PLTE` 与 `tRNS` 块逐字节写回，不修改、重排或删减自带颜色表。Bicubic 结果仅映射回原颜色表并重写像素索引。PNG 坐标文本按 Ratio 缩放，其他元数据尽量保留。
-
-## `system.ini [VITA]`
-
-已有 `[VITA]` 时完全不改。不存在时，无论文本项是否勾选，都在文件末尾追加 PSV 模板：`WIDTH=960`、`HEIGHT=540`、`SIDECUT=0`、`BOOT=system/first.iet`、`FONT_CACHE_SIZE=25165824`。`CHARSET` 优先沿用 `[WINDOWS]`，其次使用文件中首个 `CHARSET`，都没有时使用 `Shift_JIS`。
 
 ## 构建、测试和 GitHub Actions
 
@@ -75,8 +67,17 @@ dotnet publish src/Art3m1s.PsvTool.App -c Release -r win-x64
 - pf2/pf6 可读取，但重新打包统一输出 pf8；超 4 GiB 的单个 PFS 条目不支持。
 - 自动文本规则面向常见 Artemis 脚本，发布前仍应在真实游戏中检查字幕、点击区域与动画坐标。
 
-## 开源来源、许可证与 FFmpeg 合规
+## Credits
 
-本项目是独立的 C# 重写与适配，整体采用 [GPL-3.0-or-later](LICENSE)。PFS 行为参考 [nextgal/pfs_upk@abdffcb](https://github.com/nextgal/pfs_upk/tree/abdffcbeb3c733ce234aa99ed42b206d13aaed2f)（GPL-3.0）；文本与 Ratio 规则参考 [VisualNovelUpscaler@d755913](https://github.com/hokejyo/VisualNovelUpscaler/tree/d755913eb72f739ad4faea70e689cf933ba54c7f)（MIT）；并行与图片流程参考 [ArtemisTools@3333dea](https://github.com/DeQxJ00/ArtemisTools/tree/3333dea5b27a36c49e45035bf02f5f0a1b0f83e8)（GPL-3.0）。没有移植 waifu2x 逻辑。完整说明见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
+感谢以下开源项目。
 
-发行版只允许嵌入未启用 `--enable-gpl`、`--enable-nonfree` 的 FFmpeg 9.0.1 LGPL 构建，同时附带构建配置、对应源码包或源码获取方式。详见 [FFmpeg Legal](https://ffmpeg.org/legal.html)。
+| 项目 | 许可证 | 在本项目中的用途 | 来源 |
+|---|---|---|---|
+| **pfs_upk** | GPL-3.0 | pf2 / pf6 / pf8 格式及打包、解包行为参考 | [nextgal/pfs_upk@abdffcb](https://github.com/nextgal/pfs_upk/tree/abdffcbeb3c733ce234aa99ed42b206d13aaed2f) |
+| **VisualNovelUpscaler** | MIT | Artemis 文本坐标、尺寸与 Ratio 处理规则参考； | [hokejyo/VisualNovelUpscaler@d755913](https://github.com/hokejyo/VisualNovelUpscaler/tree/d755913eb72f739ad4faea70e689cf933ba54c7f) |
+| **Avalonia** | MIT | 跨平台桌面 UI（12.1.2） | [AvaloniaUI/Avalonia](https://github.com/AvaloniaUI/Avalonia) |
+| **SixLabors.ImageSharp** | Six Labors Split License 1.0 | PNG 解码与 Bicubic 缩放（3.1.12） | [SixLabors/ImageSharp](https://github.com/SixLabors/ImageSharp) |
+| **Optris.StaticGraphics.Avalonia.Software** | MIT fork 及上游组件许可证 | NativeAOT 静态 Skia / HarfBuzz 图形后端 | [NuGet](https://www.nuget.org/packages/Optris.StaticGraphics.Avalonia.Software) |
+| **FFmpeg / ffprobe** | LGPL-2.1-or-later 构建 | 动画与视频探测、缩放及转码（9.0.1） | [FFmpeg 9.0.1 源码](https://ffmpeg.org/releases/ffmpeg-9.0.1.tar.xz) |
+
+正式发布包的 `licenses` 目录附带运行时第三方组件的许可证与版权声明，其中包含 FFmpeg 的未修改源码说明；包内另有 `FFMPEG-BUILD-CONFIG.txt`。对应的 `ffmpeg-9.0.1.tar.xz` 源码和源码 SHA-256 作为 GitHub Release 独立附件提供。完整清单见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。

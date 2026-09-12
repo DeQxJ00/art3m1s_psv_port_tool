@@ -32,11 +32,7 @@ The converter writes to a dedicated sibling staging directory and replaces the d
 
 The default is `0.5`; valid input is `0 < Ratio ≤ 1`. Presets are `0.75 · 720p`, `0.5 · 1080p`, `0.375 · 2K`, and `0.25 · 4K`. Aim for “game resolution × Ratio” near PSV `960×540` (or `960×544`). Larger images can exhaust PSV memory. Resolution is read from `[WINDOWS]` in root `system.ini`; otherwise inspect a PNG under extracted `image/bg`.
 
-## PFS recognition
-
-Top-level files named `xxxxx.pfs` or `xxxxx.pfs.000`–`.999` with a `pf2`, `pf6`, or `pf8` header are accepted. Numeric suffixes may be sparse and prefixes may differ. Every existing physical file is an independent archive: files are never concatenated, missing numbers are never created, and names are never changed. Entry order, raw path bytes, and directory structure are retained; rebuilt archives use encrypted pf8. Absolute and `..` traversal paths are rejected.
-
-## Text, image, animation, and video rules
+## Asset processing rules
 
 - Text: scales common Artemis coordinates, sizes, and font values in INI / TBL / IPT / AST / LUA while preserving UTF-8 / Shift_JIS, BOM, and line endings. IET is copied unchanged.
 - Images: ImageSharp Bicubic PNG resize only. No PNG optimization, palette compression, waifu2x, or lossy compression.
@@ -50,10 +46,6 @@ Default parallelism is `max(1, logical CPU count - 1)`, with at most two simulta
 ## PNG palette and transparency guarantees
 
 RGB24 stays RGB24 without Alpha; RGBA, grayscale, and transparent grayscale retain their color type. Indexed PNGs keep their original 1/2/4/8-bit depth. Original `PLTE` and `tRNS` chunks are written back byte-for-byte—the built-in palette is never edited, reordered, or reduced. Bicubic pixels are mapped back to the original palette and only pixel indices change. PNG coordinate text is scaled; other metadata is retained where possible.
-
-## `system.ini [VITA]`
-
-An existing `[VITA]` section is left completely untouched. If absent, the PSV template is appended even when Text is unchecked: `WIDTH=960`, `HEIGHT=540`, `SIDECUT=0`, `BOOT=system/first.iet`, and `FONT_CACHE_SIZE=25165824`. `CHARSET` comes from `[WINDOWS]`, then the first existing `CHARSET`, then defaults to `Shift_JIS`.
 
 ## Build, tests, and GitHub Actions
 
@@ -75,8 +67,17 @@ dotnet publish src/Art3m1s.PsvTool.App -c Release -r win-x64
 - pf2/pf6 can be read, while rebuilt files are pf8. Individual PFS entries over 4 GiB are unsupported.
 - Automatic text rules target common Artemis scripts; verify subtitles, hit areas, and animation coordinates in the actual game.
 
-## Sources, licenses, and FFmpeg compliance
+## Credits
 
-This is an independent C# rewrite/adaptation licensed [GPL-3.0-or-later](LICENSE). PFS behavior references [nextgal/pfs_upk@abdffcb](https://github.com/nextgal/pfs_upk/tree/abdffcbeb3c733ce234aa99ed42b206d13aaed2f) (GPL-3.0); text and Ratio behavior references [VisualNovelUpscaler@d755913](https://github.com/hokejyo/VisualNovelUpscaler/tree/d755913eb72f739ad4faea70e689cf933ba54c7f) (MIT); image and concurrency behavior references [ArtemisTools@3333dea](https://github.com/DeQxJ00/ArtemisTools/tree/3333dea5b27a36c49e45035bf02f5f0a1b0f83e8) (GPL-3.0). No waifu2x implementation is included. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+Thanks to the following open-source projects.
 
-Release builds may only embed FFmpeg 9.0.1 LGPL builds made without `--enable-gpl` or `--enable-nonfree`; build configuration and corresponding source or source offer ship alongside the binaries. See [FFmpeg Legal](https://ffmpeg.org/legal.html).
+| Project | License | Use in this project | Source |
+|---|---|---|---|
+| **pfs_upk** | GPL-3.0 | Reference for pf2 / pf6 / pf8 formats and pack/unpack behavior | [nextgal/pfs_upk@abdffcb](https://github.com/nextgal/pfs_upk/tree/abdffcbeb3c733ce234aa99ed42b206d13aaed2f) |
+| **VisualNovelUpscaler** | MIT | Reference for Artemis text coordinates, sizes, and Ratio rules | [hokejyo/VisualNovelUpscaler@d755913](https://github.com/hokejyo/VisualNovelUpscaler/tree/d755913eb72f739ad4faea70e689cf933ba54c7f) |
+| **Avalonia** | MIT | Cross-platform desktop UI (12.1.2) | [AvaloniaUI/Avalonia](https://github.com/AvaloniaUI/Avalonia) |
+| **SixLabors.ImageSharp** | Six Labors Split License 1.0 | PNG decoding and Bicubic resizing (3.1.12) | [SixLabors/ImageSharp](https://github.com/SixLabors/ImageSharp) |
+| **Optris.StaticGraphics.Avalonia.Software** | MIT fork and upstream component licenses | Static Skia / HarfBuzz graphics backend for NativeAOT | [NuGet](https://www.nuget.org/packages/Optris.StaticGraphics.Avalonia.Software) |
+| **FFmpeg / ffprobe** | LGPL-2.1-or-later build | Animation/video probing, resizing, and transcoding (9.0.1) | [FFmpeg 9.0.1 source](https://ffmpeg.org/releases/ffmpeg-9.0.1.tar.xz) |
+
+Official packages include runtime third-party licenses and copyright notices in the `licenses` directory, including the FFmpeg unmodified-source statement; `FFMPEG-BUILD-CONFIG.txt` is included beside that directory. The corresponding `ffmpeg-9.0.1.tar.xz` source archive and its SHA-256 are published as separate GitHub Release assets. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for the complete inventory.

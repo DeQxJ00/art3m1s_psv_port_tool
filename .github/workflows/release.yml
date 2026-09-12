@@ -101,14 +101,14 @@ jobs:
         run: |
           Copy-Item LICENSE,THIRD-PARTY-NOTICES.md "publish/${{ matrix.rid }}"
           Copy-Item "third_party/ffmpeg/${{ matrix.rid }}/BUILD-CONFIG.txt" "publish/${{ matrix.rid }}/FFMPEG-BUILD-CONFIG.txt"
-          Copy-Item ffmpeg.tar.xz "publish/${{ matrix.rid }}/ffmpeg-${env:FFMPEG_VERSION}.tar.xz"
+          ./scripts/collect-third-party-licenses.ps1 -PublishDirectory "publish/${{ matrix.rid }}" -RuntimeIdentifier "${{ matrix.rid }}" -FfmpegSourceArchive ffmpeg.tar.xz -FfmpegVersion $env:FFMPEG_VERSION
           if ('${{ matrix.rid }}' -eq 'win-x64') {
             $files = @(
               "publish/${{ matrix.rid }}/Art3m1s.PsvTool.App.exe",
               "publish/${{ matrix.rid }}/LICENSE",
               "publish/${{ matrix.rid }}/THIRD-PARTY-NOTICES.md",
               "publish/${{ matrix.rid }}/FFMPEG-BUILD-CONFIG.txt",
-              "publish/${{ matrix.rid }}/ffmpeg-${env:FFMPEG_VERSION}.tar.xz"
+              "publish/${{ matrix.rid }}/licenses"
             )
             Compress-Archive -Path $files -DestinationPath "art3m1s_psv_port_tool-${{ matrix.rid }}.zip"
           }
@@ -117,7 +117,7 @@ jobs:
         run: |
           chmod +x publish/${{ matrix.rid }}/Art3m1s.PsvTool.App
           cd publish/${{ matrix.rid }}
-          zip -9 ../../art3m1s_psv_port_tool-${{ matrix.rid }}.zip Art3m1s.PsvTool.App LICENSE THIRD-PARTY-NOTICES.md FFMPEG-BUILD-CONFIG.txt ffmpeg-${FFMPEG_VERSION}.tar.xz
+          zip -9r ../../art3m1s_psv_port_tool-${{ matrix.rid }}.zip Art3m1s.PsvTool.App LICENSE THIRD-PARTY-NOTICES.md FFMPEG-BUILD-CONFIG.txt licenses
       - if: runner.os == 'macOS'
         shell: bash
         run: |
@@ -127,7 +127,8 @@ jobs:
           cp publish/${{ matrix.rid }}/Art3m1s.PsvTool.App "$app/MacOS/art3m1s_psv_port_tool"
           find publish/${{ matrix.rid }} -maxdepth 1 -name '*.dylib' -exec cp {} "$app/MacOS/" \;
           chmod +x "$app/MacOS/art3m1s_psv_port_tool"
-          cp publish/${{ matrix.rid }}/LICENSE publish/${{ matrix.rid }}/THIRD-PARTY-NOTICES.md publish/${{ matrix.rid }}/FFMPEG-BUILD-CONFIG.txt publish/${{ matrix.rid }}/ffmpeg-${FFMPEG_VERSION}.tar.xz "$app/Resources"
+          cp publish/${{ matrix.rid }}/LICENSE publish/${{ matrix.rid }}/THIRD-PARTY-NOTICES.md publish/${{ matrix.rid }}/FFMPEG-BUILD-CONFIG.txt "$app/Resources"
+          cp -R publish/${{ matrix.rid }}/licenses "$app/Resources/licenses"
           cd bundle
           zip -9yr ../art3m1s_psv_port_tool-${{ matrix.rid }}.app.zip art3m1s_psv_port_tool.app
       - uses: anchore/sbom-action@v0
@@ -147,8 +148,24 @@ jobs:
             art3m1s_psv_port_tool-${{ matrix.rid }}.spdx.json
             SHA256-${{ matrix.rid }}.txt
 
+  ffmpeg-source:
+    runs-on: ubuntu-latest
+    steps:
+      - shell: pwsh
+        run: |
+          Invoke-WebRequest "https://ffmpeg.org/releases/ffmpeg-${env:FFMPEG_VERSION}.tar.xz" -OutFile "ffmpeg-${env:FFMPEG_VERSION}.tar.xz"
+          $actual = (Get-FileHash "ffmpeg-${env:FFMPEG_VERSION}.tar.xz" -Algorithm SHA256).Hash
+          if ($actual -ne $env:FFMPEG_SOURCE_SHA256) { throw "FFmpeg source SHA-256 mismatch: $actual" }
+          "$actual  ffmpeg-${env:FFMPEG_VERSION}.tar.xz" | Set-Content FFMPEG-SOURCE-SHA256.txt -NoNewline
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-ffmpeg-source
+          path: |
+            ffmpeg-${{ env.FFMPEG_VERSION }}.tar.xz
+            FFMPEG-SOURCE-SHA256.txt
+
   publish:
-    needs: build
+    needs: [build, ffmpeg-source]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -162,3 +179,6 @@ jobs:
           files: dist/*
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
+          body: |
+            Official packages include standalone FFmpeg/ffprobe 9.0.1 command-line programs licensed under LGPL-2.1-or-later.
+            The exact corresponding source is attached as `ffmpeg-9.0.1.tar.xz`; license texts, build configuration, and the unmodified-source statement are included in each platform package.
