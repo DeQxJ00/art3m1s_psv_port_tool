@@ -17,7 +17,7 @@
 
 ## 下载与平台支持
 
-Release 提供 `win-x64`、`linux-x64` NativeAOT 单文件，以及未签名、未公证的 `osx-x64` / `osx-arm64` `.app.zip`。macOS 首次启动可能需要在“隐私与安全性”中手动允许。视频转换使用发行包内嵌的 FFmpeg/ffprobe 9.0.1 LGPL 构建；开发构建也可通过 `ART3M1S_FFMPEG` 与 `ART3M1S_FFPROBE` 指定工具。
+Release 提供 `win-x64`、`linux-x64` NativeAOT 单文件，以及未签名、未公证的 `osx-x64` / `osx-arm64` `.app.zip`。macOS 首次启动可能需要在“隐私与安全性”中手动允许。FFmpeg/ffprobe 9.0.1 LGPL 可执行文件位于发行包的 `tools` 目录，不嵌入主程序；开发构建也可通过 `ART3M1S_FFMPEG` 与 `ART3M1S_FFPROBE` 指定工具。
 
 ## 使用步骤
 
@@ -79,4 +79,3 @@ dotnet publish src/Art3m1s.PsvTool.App -c Release -r win-x64
 | **SixLabors.ImageSharp** | Six Labors Split License 1.0 | PNG 解码与 Bicubic 缩放（3.1.12） | [SixLabors/ImageSharp](https://github.com/SixLabors/ImageSharp) |
 | **Optris.StaticGraphics.Avalonia.Software** | MIT fork 及上游组件许可证 | NativeAOT 静态 Skia / HarfBuzz 图形后端 | [NuGet](https://www.nuget.org/packages/Optris.StaticGraphics.Avalonia.Software) |
 | **FFmpeg / ffprobe** | LGPL-2.1-or-later 构建 | 动画与视频探测、缩放及转码（9.0.1） | [FFmpeg 9.0.1 源码](https://ffmpeg.org/releases/ffmpeg-9.0.1.tar.xz) |
-

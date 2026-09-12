@@ -24,7 +24,7 @@ jobs:
           - os: ubuntu-latest
             rid: linux-x64
             extension: ''
-          - os: macos-13
+          - os: macos-15-intel
             rid: osx-x64
             extension: ''
           - os: macos-14
@@ -32,14 +32,14 @@ jobs:
             extension: ''
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
           cache: true
           cache-dependency-path: Directory.Packages.props
       - id: ffmpeg-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ffmpeg-install
           key: ffmpeg-${{ env.FFMPEG_VERSION }}-lgpl-${{ matrix.rid }}-v1
@@ -63,7 +63,7 @@ jobs:
           set -euo pipefail
           tar -xf ffmpeg.tar.xz
           cd "ffmpeg-${FFMPEG_VERSION}"
-          ./configure --prefix="$PWD/../ffmpeg-install" --disable-shared --enable-static --disable-doc --disable-debug --disable-autodetect --disable-gpl --disable-nonfree --extra-version=art3m1s-lgpl
+          ./configure --prefix="$PWD/../ffmpeg-install" --disable-shared --enable-static --disable-doc --disable-debug --disable-autodetect --disable-gpl --disable-nonfree --disable-x86asm --extra-version=art3m1s-lgpl
           make -j2
           make install
       - if: runner.os == 'Windows' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
@@ -72,16 +72,23 @@ jobs:
           set -euo pipefail
           tar -xf ffmpeg.tar.xz
           cd "ffmpeg-${FFMPEG_VERSION}"
-          ./configure --prefix="$PWD/../ffmpeg-install" --disable-shared --enable-static --disable-doc --disable-debug --disable-autodetect --disable-gpl --disable-nonfree --extra-version=art3m1s-lgpl
+          ./configure --prefix="$PWD/../ffmpeg-install" --disable-shared --enable-static --disable-doc --disable-debug --disable-autodetect --disable-gpl --disable-nonfree --disable-x86asm --extra-version=art3m1s-lgpl
           make -j2
           make install
+      - run: dotnet test art3m1s_psv_port_tool.slnx -c Release
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+      - run: dotnet publish src/Art3m1s.PsvTool.App/Art3m1s.PsvTool.App.csproj -c Release -r ${{ matrix.rid }} -p:PublishAot=true -p:PublishSingleFile=true -o publish/${{ matrix.rid }}
       - shell: pwsh
         run: |
-          $toolDir = "third_party/ffmpeg/${{ matrix.rid }}"
+          $toolDir = "publish/${{ matrix.rid }}/tools"
           New-Item -ItemType Directory -Force $toolDir | Out-Null
           $suffix = '${{ matrix.extension }}'
           Copy-Item "ffmpeg-install/bin/ffmpeg$suffix" "$toolDir/ffmpeg$suffix"
           Copy-Item "ffmpeg-install/bin/ffprobe$suffix" "$toolDir/ffprobe$suffix"
+          if (-not [OperatingSystem]::IsWindows()) {
+            chmod +x "$toolDir/ffmpeg$suffix" "$toolDir/ffprobe$suffix"
+          }
           foreach ($tool in @("ffmpeg$suffix","ffprobe$suffix")) {
             $hash = (Get-FileHash "$toolDir/$tool" -Algorithm SHA256).Hash
             "$hash  $tool" | Set-Content "$toolDir/$tool.sha256" -NoNewline
@@ -89,8 +96,6 @@ jobs:
           & "$toolDir/ffmpeg$suffix" -hide_banner -buildconf 2>&1 | Out-File "$toolDir/BUILD-CONFIG.txt"
           $config = Get-Content "$toolDir/BUILD-CONFIG.txt" -Raw
           if ($config -match '--enable-gpl|--enable-nonfree') { throw 'Non-LGPL FFmpeg configuration detected.' }
-      - run: dotnet test art3m1s_psv_port_tool.slnx -c Release
-      - run: dotnet publish src/Art3m1s.PsvTool.App/Art3m1s.PsvTool.App.csproj -c Release -r ${{ matrix.rid }} -p:PublishAot=true -p:PublishSingleFile=true -o publish/${{ matrix.rid }}
       - shell: pwsh
         run: |
           $suffix = '${{ matrix.extension }}'
@@ -100,13 +105,14 @@ jobs:
       - shell: pwsh
         run: |
           Copy-Item LICENSE "publish/${{ matrix.rid }}"
-          Copy-Item "third_party/ffmpeg/${{ matrix.rid }}/BUILD-CONFIG.txt" "publish/${{ matrix.rid }}/FFMPEG-BUILD-CONFIG.txt"
+          Copy-Item "publish/${{ matrix.rid }}/tools/BUILD-CONFIG.txt" "publish/${{ matrix.rid }}/FFMPEG-BUILD-CONFIG.txt"
           ./scripts/collect-third-party-licenses.ps1 -PublishDirectory "publish/${{ matrix.rid }}" -RuntimeIdentifier "${{ matrix.rid }}" -FfmpegSourceArchive ffmpeg.tar.xz -FfmpegVersion $env:FFMPEG_VERSION
           if ('${{ matrix.rid }}' -eq 'win-x64') {
             $files = @(
               "publish/${{ matrix.rid }}/Art3m1s.PsvTool.App.exe",
               "publish/${{ matrix.rid }}/LICENSE",
               "publish/${{ matrix.rid }}/FFMPEG-BUILD-CONFIG.txt",
+              "publish/${{ matrix.rid }}/tools",
               "publish/${{ matrix.rid }}/licenses"
             )
             Compress-Archive -Path $files -DestinationPath "art3m1s_psv_port_tool-${{ matrix.rid }}.zip"
@@ -116,7 +122,7 @@ jobs:
         run: |
           chmod +x publish/${{ matrix.rid }}/Art3m1s.PsvTool.App
           cd publish/${{ matrix.rid }}
-          zip -9r ../../art3m1s_psv_port_tool-${{ matrix.rid }}.zip Art3m1s.PsvTool.App LICENSE FFMPEG-BUILD-CONFIG.txt licenses
+          zip -9r ../../art3m1s_psv_port_tool-${{ matrix.rid }}.zip Art3m1s.PsvTool.App LICENSE FFMPEG-BUILD-CONFIG.txt tools licenses
       - if: runner.os == 'macOS'
         shell: bash
         run: |
@@ -140,6 +146,7 @@ jobs:
           find publish/${{ matrix.rid }} -maxdepth 1 -name '*.dylib' -exec cp {} "$app/MacOS/" \;
           chmod +x "$app/MacOS/art3m1s_psv_port_tool"
           cp publish/${{ matrix.rid }}/LICENSE publish/${{ matrix.rid }}/FFMPEG-BUILD-CONFIG.txt "$app/Resources"
+          cp -R publish/${{ matrix.rid }}/tools "$app/MacOS/tools"
           cp -R publish/${{ matrix.rid }}/licenses "$app/Resources/licenses"
           cd bundle
           zip -9yr ../art3m1s_psv_port_tool-${{ matrix.rid }}.app.zip art3m1s_psv_port_tool.app
@@ -152,7 +159,7 @@ jobs:
         run: |
           $archive = Get-ChildItem "art3m1s_psv_port_tool-${{ matrix.rid }}*.zip" | Select-Object -First 1
           (Get-FileHash $archive -Algorithm SHA256).Hash + "  " + $archive.Name | Set-Content "SHA256-${{ matrix.rid }}.txt"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: release-${{ matrix.rid }}
           path: |
@@ -169,7 +176,7 @@ jobs:
           $actual = (Get-FileHash "ffmpeg-${env:FFMPEG_VERSION}.tar.xz" -Algorithm SHA256).Hash
           if ($actual -ne $env:FFMPEG_SOURCE_SHA256) { throw "FFmpeg source SHA-256 mismatch: $actual" }
           "$actual  ffmpeg-${env:FFMPEG_VERSION}.tar.xz" | Set-Content FFMPEG-SOURCE-SHA256.txt -NoNewline
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: release-ffmpeg-source
           path: |
@@ -177,10 +184,11 @@ jobs:
             FFMPEG-SOURCE-SHA256.txt
 
   publish:
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: [build, ffmpeg-source]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           pattern: release-*
           merge-multiple: true

@@ -17,7 +17,7 @@ A PSV porting assistant for Artemis-engine games. It extracts each physical PFS 
 
 ## Downloads and platform support
 
-Releases provide NativeAOT single files for `win-x64` and `linux-x64`, plus unsigned and unnotarized `.app.zip` bundles for `osx-x64` and `osx-arm64`. macOS may require manual approval under Privacy & Security. Video conversion uses embedded FFmpeg/ffprobe 9.0.1 LGPL builds; development builds may use `ART3M1S_FFMPEG` and `ART3M1S_FFPROBE`.
+Releases provide NativeAOT single files for `win-x64` and `linux-x64`, plus unsigned and unnotarized `.app.zip` bundles for `osx-x64` and `osx-arm64`. macOS may require manual approval under Privacy & Security. FFmpeg/ffprobe 9.0.1 LGPL executables are shipped in the release package's `tools` directory and are not embedded in the main application; development builds may use `ART3M1S_FFMPEG` and `ART3M1S_FFPROBE`.
 
 ## Usage
 
@@ -79,4 +79,3 @@ Thanks to the following open-source projects.
 | **SixLabors.ImageSharp** | Six Labors Split License 1.0 | PNG decoding and Bicubic resizing (3.1.12) | [SixLabors/ImageSharp](https://github.com/SixLabors/ImageSharp) |
 | **Optris.StaticGraphics.Avalonia.Software** | MIT fork and upstream component licenses | Static Skia / HarfBuzz graphics backend for NativeAOT | [NuGet](https://www.nuget.org/packages/Optris.StaticGraphics.Avalonia.Software) |
 | **FFmpeg / ffprobe** | LGPL-2.1-or-later build | Animation/video probing, resizing, and transcoding (9.0.1) | [FFmpeg 9.0.1 source](https://ffmpeg.org/releases/ffmpeg-9.0.1.tar.xz) |
-

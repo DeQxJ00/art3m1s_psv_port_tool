@@ -15,8 +15,8 @@ jobs:
         os: [windows-latest, ubuntu-latest, macos-14]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
           cache: true
@@ -24,7 +24,9 @@ jobs:
       - run: dotnet restore art3m1s_psv_port_tool.slnx
       - run: dotnet build art3m1s_psv_port_tool.slnx -c Release --no-restore
       - run: dotnet test art3m1s_psv_port_tool.slnx -c Release --no-build --logger trx
-      - run: dotnet format art3m1s_psv_port_tool.slnx --verify-no-changes --no-restore
+      # Optris contributes a generated source file from the global NuGet cache;
+      # format only source files owned by this repository.
+      - run: dotnet format art3m1s_psv_port_tool.slnx --verify-no-changes --no-restore --include src tests tools
 
   native-aot:
     strategy:
@@ -35,18 +37,20 @@ jobs:
             rid: win-x64
           - os: ubuntu-latest
             rid: linux-x64
-          - os: macos-13
+          - os: macos-15-intel
             rid: osx-x64
           - os: macos-14
             rid: osx-arm64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
           cache: true
           cache-dependency-path: Directory.Packages.props
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - run: dotnet publish src/Art3m1s.PsvTool.App/Art3m1s.PsvTool.App.csproj -c Release -r ${{ matrix.rid }} -p:PublishAot=true -p:PublishSingleFile=true -p:IlcGenerateCompleteTypeMetadata=false -o artifacts/${{ matrix.rid }}
       - shell: pwsh
         run: |
@@ -58,8 +62,8 @@ jobs:
   screenshots:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
           cache: true
@@ -82,7 +86,7 @@ jobs:
   readme-links:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: |
           test -f README.md && test -f README.en.md
           for image in ui-zh-CN-dark.png ui-en-US-dark.png ui-zh-CN-light.png ui-en-US-light.png; do test -f "docs/screenshots/$image"; done

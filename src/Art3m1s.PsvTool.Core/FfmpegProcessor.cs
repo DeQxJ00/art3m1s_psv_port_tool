@@ -1,7 +1,5 @@
 using System.Diagnostics;
 using System.Globalization;
-using System.Reflection;
-using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace Art3m1s.PsvTool.Core;
@@ -109,42 +107,9 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
         if (!string.IsNullOrWhiteSpace(configured) && File.Exists(configured)) return configured;
         string local = Path.Combine(AppContext.BaseDirectory, "tools", executable);
         if (File.Exists(local)) return local;
-        string? embedded = ExtractEmbeddedTool(executable);
-        if (embedded is not null) return embedded;
+        local = Path.Combine(AppContext.BaseDirectory, executable);
+        if (File.Exists(local)) return local;
         return executable;
-    }
-
-    private static string? ExtractEmbeddedTool(string executable)
-    {
-        Assembly assembly = typeof(FfmpegProcessor).Assembly;
-        string resource = "Art3m1s.Tools." + executable;
-        if (!assembly.GetManifestResourceNames().Contains(resource, StringComparer.Ordinal)) return null;
-        string version = assembly.GetName().Version?.ToString() ?? "dev";
-        string cache = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "art3m1s_psv_port_tool", "ffmpeg", version);
-        Directory.CreateDirectory(cache);
-        string output = Path.Combine(cache, executable);
-        string hashResource = resource + ".sha256";
-        string? expected = null;
-        using (Stream? hashStream = assembly.GetManifestResourceStream(hashResource))
-        using (StreamReader? reader = hashStream is null ? null : new StreamReader(hashStream))
-            expected = reader?.ReadToEnd().Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-        if (!File.Exists(output) || expected is not null && !HashMatches(output, expected))
-        {
-            string temporary = output + ".tmp-" + Guid.NewGuid().ToString("N");
-            using Stream source = assembly.GetManifestResourceStream(resource) ?? throw new InvalidOperationException("Missing embedded FFmpeg resource.");
-            using (FileStream target = File.Create(temporary)) source.CopyTo(target);
-            if (expected is not null && !HashMatches(temporary, expected)) { File.Delete(temporary); throw new InvalidDataException("Embedded FFmpeg SHA-256 mismatch."); }
-            File.Move(temporary, output, true);
-            if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(output, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-        }
-        return output;
-    }
-
-    private static bool HashMatches(string path, string expected)
-    {
-        using FileStream stream = File.OpenRead(path);
-        string actual = Convert.ToHexString(SHA256.HashData(stream));
-        return actual.Equals(expected, StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed record VideoProbe(string Codec, string Format);
