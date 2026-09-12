@@ -4,6 +4,7 @@
         x:Class="Art3m1s.PsvTool.App.MainWindow"
         x:DataType="vm:MainViewModel"
         Title="{Binding Title}" Width="1180" Height="1000" MinWidth="900" MinHeight="680"
+        Icon="avares://Art3m1s.PsvTool.App/Assets/app-icon.png"
         WindowStartupLocation="CenterScreen">
   <Grid RowDefinitions="Auto,*,Auto">
     <Border Grid.Row="0" Background="{DynamicResource HeaderBg}" Padding="28,20" BorderBrush="{DynamicResource CardBorder}" BorderThickness="0,0,0,1">
@@ -12,8 +13,8 @@
           <Border.Background><LinearGradientBrush StartPoint="0%,50%" EndPoint="100%,50%"><GradientStop Color="#087EFF" Offset="0"/><GradientStop Color="#42D9FF" Offset="0.55"/><GradientStop Color="#8C67FF" Offset="1"/></LinearGradientBrush></Border.Background>
         </Border>
         <StackPanel Orientation="Horizontal" Spacing="14">
-          <Border Width="48" Height="48" CornerRadius="13" Background="#087EFF" BoxShadow="0 5 18 0 #50087EFF">
-            <TextBlock Text="A3" Foreground="White" FontSize="19" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+          <Border Width="52" Height="52" CornerRadius="14" Background="#081126" BoxShadow="0 5 18 0 #50087EFF">
+            <Image Source="avares://Art3m1s.PsvTool.App/Assets/app-icon.png" Width="50" Height="50" Stretch="Uniform" />
           </Border>
           <StackPanel VerticalAlignment="Center">
             <TextBlock Text="{Binding Title}" FontSize="25" FontWeight="Bold" Foreground="{DynamicResource PrimaryText}" />

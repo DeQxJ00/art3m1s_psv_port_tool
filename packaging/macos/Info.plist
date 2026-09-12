@@ -5,6 +5,7 @@
   <key>CFBundleDisplayName</key><string>art3m1s PSV Port Tool</string>
   <key>CFBundleExecutable</key><string>art3m1s_psv_port_tool</string>
   <key>CFBundleIdentifier</key><string>io.github.deqxj00.art3m1s-psv-port-tool</string>
+  <key>CFBundleIconFile</key><string>app-icon.icns</string>
   <key>CFBundleName</key><string>art3m1s_psv_port_tool</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>1.0.0</string>

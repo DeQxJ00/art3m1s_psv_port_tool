@@ -5,12 +5,14 @@
     <PublishAot>true</PublishAot>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
+    <ApplicationIcon>Assets\app-icon.ico</ApplicationIcon>
     <InvariantGlobalization>false</InvariantGlobalization>
     <StripSymbols Condition="'$(PublishAot)' == 'true'">true</StripSymbols>
     <DebugType Condition="'$(PublishAot)' == 'true'">None</DebugType>
     <DebugSymbols Condition="'$(PublishAot)' == 'true'">false</DebugSymbols>
   </PropertyGroup>
   <ItemGroup>
+    <AvaloniaResource Include="Assets\app-icon.png" />
     <PackageReference Include="Avalonia" />
     <PackageReference Include="Avalonia.Desktop" />
     <PackageReference Include="Avalonia.Fonts.Inter" />

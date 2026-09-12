@@ -123,6 +123,19 @@ jobs:
         run: |
           app=bundle/art3m1s_psv_port_tool.app/Contents
           mkdir -p "$app/MacOS" "$app/Resources"
+          iconset=bundle/app-icon.iconset
+          mkdir -p "$iconset"
+          sips -z 16 16 src/Art3m1s.PsvTool.App/Assets/app-icon.png --out "$iconset/icon_16x16.png"
+          sips -z 32 32 src/Art3m1s.PsvTool.App/Assets/app-icon.png --out "$iconset/icon_16x16@2x.png"
+          sips -z 32 32 src/Art3m1s.PsvTool.App/Assets/app-icon.png --out "$iconset/icon_32x32.png"
+          sips -z 64 64 src/Art3m1s.PsvTool.App/Assets/app-icon.png --out "$iconset/icon_32x32@2x.png"
+          sips -z 128 128 src/Art3m1s.PsvTool.App/Assets/app-icon.png --out "$iconset/icon_128x128.png"
+          sips -z 256 256 src/Art3m1s.PsvTool.App/Assets/app-icon.png --out "$iconset/icon_128x128@2x.png"
+          sips -z 256 256 src/Art3m1s.PsvTool.App/Assets/app-icon.png --out "$iconset/icon_256x256.png"
+          sips -z 512 512 src/Art3m1s.PsvTool.App/Assets/app-icon.png --out "$iconset/icon_256x256@2x.png"
+          sips -z 512 512 src/Art3m1s.PsvTool.App/Assets/app-icon.png --out "$iconset/icon_512x512.png"
+          cp src/Art3m1s.PsvTool.App/Assets/app-icon.png "$iconset/icon_512x512@2x.png"
+          iconutil -c icns "$iconset" -o "$app/Resources/app-icon.icns"
           cp packaging/macos/Info.plist "$app/Info.plist"
           cp publish/${{ matrix.rid }}/Art3m1s.PsvTool.App "$app/MacOS/art3m1s_psv_port_tool"
           find publish/${{ matrix.rid }} -maxdepth 1 -name '*.dylib' -exec cp {} "$app/MacOS/" \;
