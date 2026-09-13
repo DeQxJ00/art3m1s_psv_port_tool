@@ -5,7 +5,7 @@
 [![CI](https://github.com/DeQxJ00/art3m1s_psv_port_tool/actions/workflows/ci.yml/badge.svg)](https://github.com/DeQxJ00/art3m1s_psv_port_tool/actions/workflows/ci.yml)
 [![Release](https://github.com/DeQxJ00/art3m1s_psv_port_tool/actions/workflows/release.yml/badge.svg)](https://github.com/DeQxJ00/art3m1s_psv_port_tool/actions/workflows/release.yml)
 
-A PSV porting assistant for Artemis-engine games. It extracts each physical PFS independently, resizes selected assets, and rebuilds it under the exact same file name. Loose files and directories are copied into the output project as well. The app uses .NET 10, Avalonia 12, C# 14, and NativeAOT on Windows, Linux, and macOS.
+A PSV porting assistant for Artemis-engine games. It extracts each physical PFS independently, resizes selected assets, and rebuilds it under the exact same file name. Arbitrarily named loose directories under the game root are copied recursively and their assets are converted by file extension (tested at three levels and with no depth limit in the implementation). The app uses .NET 10, Avalonia 12, C# 14, and NativeAOT on Windows, Linux, and macOS.
 
 > Only process game assets you are authorized to modify, and keep a backup. This tool does not bypass platform signing, licensing encryption, or DRM.
 
@@ -17,7 +17,7 @@ A PSV porting assistant for Artemis-engine games. It extracts each physical PFS 
 
 ## Downloads and platform support
 
-Releases provide NativeAOT single files for `win-x64` and `linux-x64`, plus unsigned and unnotarized `.app.zip` bundles for `osx-x64` and `osx-arm64`. macOS may require manual approval under Privacy & Security. FFmpeg/ffprobe 9.0.1 LGPL executables are shipped in the release package's `tools` directory and are not embedded in the main application; development builds may use `ART3M1S_FFMPEG` and `ART3M1S_FFPROBE`.
+Releases provide NativeAOT single files for `win-x64` and `linux-x64`, plus unsigned and unnotarized `.app.zip` bundles for `osx-x64` and `osx-arm64`. macOS may require manual approval under Privacy & Security. FFmpeg/ffprobe 9.0.1 GPL Full executables are shipped in the release package's `tools` directory and are not embedded in the main application. The build includes x264, libtheora, libogg, and zlib, with no nonfree components. Development builds may use `ART3M1S_FFMPEG` and `ART3M1S_FFPROBE`.
 
 ## Usage
 
@@ -34,10 +34,10 @@ The default is `0.5`; valid input is `0 < Ratio ≤ 1`. Presets are `0.75 · 720
 
 ## Asset processing rules
 
-- Text: scales common Artemis coordinates, sizes, and font values in INI / TBL / IPT / AST / LUA while preserving UTF-8 / Shift_JIS, BOM, and line endings. IET is copied unchanged.
+- Text: exactly reproduces VisualNovelUpscaler's Artemis matching, truncation, encoding, and output behavior for INI / TBL / IPT / AST / LUA. IET is copied unchanged.
 - Images: high-quality alpha-premultiplied ImageSharp Bicubic PNG resize only. No PNG optimization, palette compression, waifu2x, or lossy compression.
-- Animation: Bicubic OGV resize through FFmpeg, retaining frame rate and audio.
-- Video: WMV / DAT / MP4 / AVI / MPG / MKV retain the original video codec where encodable and copy audio; WMV3 becomes WMV2.
+- Animation: Bicubic OGV resize through FFmpeg; each target dimension is truncated as `int(original dimension × Ratio)`, matching VisualNovelUpscaler, while frame rate and audio are retained.
+- Video: DAT files, including entries inside PFS archives, are emitted as same-stem MP4 files at 960×544 using H.264 Main@3.1 and AAC; the extension changes from `.dat` to `.mp4`. WMV / MP4 / AVI / MPG / MKV use Ratio-based dimension truncation, retain the original codec where encodable, and copy audio; WMV3 becomes WMV2.
 - Fonts (optional): trims TrueType `glyf` outlines to common Simplified Chinese, Japanese, or Traditional Chinese sets while always retaining characters actually used by scripts, ASCII, common punctuation, and full/half-width symbols. Composite dependencies are retained recursively. CFF/CFF2, TTC, and variable fonts remain unchanged for safety.
 - Unselected asset types are copied byte-for-byte.
 
@@ -78,4 +78,8 @@ Thanks to the following open-source projects.
 | **Avalonia** | MIT | Cross-platform desktop UI (12.1.2) | [AvaloniaUI/Avalonia](https://github.com/AvaloniaUI/Avalonia) |
 | **SixLabors.ImageSharp** | Six Labors Split License 1.0 | PNG decoding and Bicubic resizing (3.1.12) | [SixLabors/ImageSharp](https://github.com/SixLabors/ImageSharp) |
 | **Optris.StaticGraphics.Avalonia.Software** | MIT fork and upstream component licenses | Static Skia / HarfBuzz graphics backend for NativeAOT | [NuGet](https://www.nuget.org/packages/Optris.StaticGraphics.Avalonia.Software) |
-| **FFmpeg / ffprobe** | LGPL-2.1-or-later build | Animation/video probing, resizing, and transcoding (9.0.1) | [FFmpeg 9.0.1 source](https://ffmpeg.org/releases/ffmpeg-9.0.1.tar.xz) |
+| **FFmpeg / ffprobe** | GPL-2.0-or-later Full build | Animation/video probing, resizing, and transcoding (9.0.1) | [FFmpeg 9.0.1 source](https://ffmpeg.org/releases/ffmpeg-9.0.1.tar.xz) |
+| **x264** | GPL-2.0 | H.264 encoding | [VideoLAN/x264](https://code.videolan.org/videolan/x264) |
+| **libtheora** | BSD-3-Clause | Theora encoding | [Xiph.Org/libtheora](https://github.com/xiph/theora) |
+| **libogg** | BSD-3-Clause | Ogg container | [Xiph.Org/libogg](https://github.com/xiph/ogg) |
+| **zlib** | Zlib | PNG frame-sequence compression | [zlib](https://zlib.net/) |

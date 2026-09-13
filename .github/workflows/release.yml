@@ -11,6 +11,14 @@ permissions:
 env:
   FFMPEG_VERSION: 9.0.1
   FFMPEG_SOURCE_SHA256: CF38E0E28C7E5605942C4A77755349B0145804A397AF37EB1FB4C77CB237F635
+  OGG_VERSION: 1.3.6
+  OGG_SOURCE_SHA256: 5C8253428E181840CD20D41F3CA16557A9CC04BAD4A3D04CCE84808677FA1061
+  THEORA_COMMIT: 8e4808736e9c181b971306cc3f05df9e61354004
+  THEORA_SOURCE_SHA256: 83E1C8682D6496352286FA0967AEDA5D78C422110312D111CF99FDF03ED73DB0
+  X264_COMMIT: b35605ace3ddf7c1a5d67a2eb553f034aef41d55
+  X264_SOURCE_SHA256: 78343017700769E7F0CB3112B09F4B92B13839B9D318499428D8D22AA9D08D33
+  ZLIB_VERSION: 1.3.2
+  ZLIB_SOURCE_SHA256: D7A0654783A4DA529D1BB793B7AD9C3318020AF77667BCAE35F95D0E42A792F3
 
 jobs:
   build:
@@ -42,12 +50,26 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ffmpeg-install
-          key: ffmpeg-${{ env.FFMPEG_VERSION }}-lgpl-${{ matrix.rid }}-v1
+          key: ffmpeg-${{ env.FFMPEG_VERSION }}-gpl-full-${{ matrix.rid }}-v2
       - shell: pwsh
         run: |
           Invoke-WebRequest "https://ffmpeg.org/releases/ffmpeg-${env:FFMPEG_VERSION}.tar.xz" -OutFile ffmpeg.tar.xz
           $actual = (Get-FileHash ffmpeg.tar.xz -Algorithm SHA256).Hash
           if ($actual -ne $env:FFMPEG_SOURCE_SHA256) { throw "FFmpeg source SHA-256 mismatch: $actual" }
+          Invoke-WebRequest "https://github.com/xiph/ogg/releases/download/v${env:OGG_VERSION}/libogg-${env:OGG_VERSION}.tar.xz" -OutFile libogg.tar.xz
+          Invoke-WebRequest "https://github.com/xiph/theora/archive/${env:THEORA_COMMIT}.tar.gz" -OutFile libtheora.tar.gz
+          Invoke-WebRequest "https://code.videolan.org/videolan/x264/-/archive/${env:X264_COMMIT}/x264-${env:X264_COMMIT}.tar.gz" -OutFile x264.tar.gz
+          Invoke-WebRequest "https://zlib.net/zlib-${env:ZLIB_VERSION}.tar.xz" -OutFile zlib.tar.xz
+          $sources = @{
+            'libogg.tar.xz' = $env:OGG_SOURCE_SHA256
+            'libtheora.tar.gz' = $env:THEORA_SOURCE_SHA256
+            'x264.tar.gz' = $env:X264_SOURCE_SHA256
+            'zlib.tar.xz' = $env:ZLIB_SOURCE_SHA256
+          }
+          foreach ($item in $sources.GetEnumerator()) {
+            $hash = (Get-FileHash $item.Key -Algorithm SHA256).Hash
+            if ($hash -ne $item.Value) { throw "$($item.Key) source SHA-256 mismatch: $hash" }
+          }
       - if: runner.os == 'Windows'
         uses: msys2/setup-msys2@v2
         with:
@@ -57,22 +79,48 @@ jobs:
             base-devel
             mingw-w64-ucrt-x86_64-toolchain
             mingw-w64-ucrt-x86_64-nasm
+            autoconf
+            automake
+            libtool
+            pkgconf
+      - if: runner.os == 'Linux' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool nasm pkg-config
+      - if: runner.os == 'macOS' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        run: brew install autoconf automake libtool nasm pkg-config
       - if: runner.os != 'Windows' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
+          prefix="$PWD/ffmpeg-deps"
+          tar -xf zlib.tar.xz
+          (cd "zlib-${ZLIB_VERSION}" && ./configure --prefix="$prefix" --static && make -j2 && make install)
+          tar -xf libogg.tar.xz
+          (cd "libogg-${OGG_VERSION}" && ./configure --prefix="$prefix" --disable-shared --enable-static && make -j2 && make install)
+          tar -xf libtheora.tar.gz
+          (cd "theora-${THEORA_COMMIT}" && ./autogen.sh && PKG_CONFIG_PATH="$prefix/lib/pkgconfig" ./configure --prefix="$prefix" --disable-shared --enable-static --disable-examples --disable-oggtest --disable-vorbistest --disable-spec --disable-doc && make -j2 && make install)
+          tar -xf x264.tar.gz
+          (cd "x264-${X264_COMMIT}" && ./configure --prefix="$prefix" --enable-static --disable-cli --disable-opencl && make -j2 && make install)
           tar -xf ffmpeg.tar.xz
           cd "ffmpeg-${FFMPEG_VERSION}"
-          ./configure --prefix="$PWD/../ffmpeg-install" --disable-shared --enable-static --disable-doc --disable-debug --disable-autodetect --disable-gpl --disable-nonfree --disable-x86asm --extra-version=art3m1s-lgpl
+          PKG_CONFIG_PATH="$prefix/lib/pkgconfig" ./configure --prefix="$PWD/../ffmpeg-install" --disable-shared --enable-static --disable-doc --disable-debug --disable-autodetect --disable-nonfree --disable-x86asm --pkg-config-flags=--static --enable-gpl --enable-zlib --enable-libtheora --enable-libx264 --extra-version=art3m1s-gpl-full
           make -j2
           make install
       - if: runner.os == 'Windows' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
         shell: msys2 {0}
         run: |
           set -euo pipefail
+          prefix="$PWD/ffmpeg-deps"
+          tar -xf zlib.tar.xz
+          (cd "zlib-${ZLIB_VERSION}" && ./configure --prefix="$prefix" --static && make -j2 && make install)
+          tar -xf libogg.tar.xz
+          (cd "libogg-${OGG_VERSION}" && ./configure --prefix="$prefix" --disable-shared --enable-static && make -j2 && make install)
+          tar -xf libtheora.tar.gz
+          (cd "theora-${THEORA_COMMIT}" && ./autogen.sh && PKG_CONFIG_PATH="$prefix/lib/pkgconfig" ./configure --prefix="$prefix" --disable-shared --enable-static --disable-examples --disable-oggtest --disable-vorbistest --disable-spec --disable-doc && make -j2 && make install)
+          tar -xf x264.tar.gz
+          (cd "x264-${X264_COMMIT}" && ./configure --prefix="$prefix" --enable-static --disable-cli --disable-opencl && make -j2 && make install)
           tar -xf ffmpeg.tar.xz
           cd "ffmpeg-${FFMPEG_VERSION}"
-          ./configure --prefix="$PWD/../ffmpeg-install" --disable-shared --enable-static --disable-doc --disable-debug --disable-autodetect --disable-gpl --disable-nonfree --disable-x86asm --extra-version=art3m1s-lgpl
+          PKG_CONFIG_PATH="$prefix/lib/pkgconfig" ./configure --prefix="$PWD/../ffmpeg-install" --disable-shared --enable-static --disable-doc --disable-debug --disable-autodetect --disable-nonfree --disable-x86asm --pkg-config-flags=--static --enable-gpl --enable-zlib --enable-libtheora --enable-libx264 --extra-version=art3m1s-gpl-full
           make -j2
           make install
       - run: dotnet test art3m1s_psv_port_tool.slnx -c Release
@@ -95,7 +143,9 @@ jobs:
           }
           & "$toolDir/ffmpeg$suffix" -hide_banner -buildconf 2>&1 | Out-File "$toolDir/BUILD-CONFIG.txt"
           $config = Get-Content "$toolDir/BUILD-CONFIG.txt" -Raw
-          if ($config -match '--enable-gpl|--enable-nonfree') { throw 'Non-LGPL FFmpeg configuration detected.' }
+          if ($config -notmatch '--enable-gpl' -or $config -match '--enable-nonfree') { throw 'Expected redistributable GPL FFmpeg Full configuration.' }
+          $encoders = & "$toolDir/ffmpeg$suffix" -hide_banner -encoders 2>&1 | Out-String
+          if ($encoders -notmatch 'libx264' -or $encoders -notmatch 'libtheora') { throw 'FFmpeg Full is missing libx264 or libtheora.' }
       - shell: pwsh
         run: |
           $suffix = '${{ matrix.extension }}'
@@ -167,7 +217,7 @@ jobs:
             art3m1s_psv_port_tool-${{ matrix.rid }}.spdx.json
             SHA256-${{ matrix.rid }}.txt
 
-  ffmpeg-source:
+  codec-sources:
     runs-on: ubuntu-latest
     steps:
       - shell: pwsh
@@ -175,17 +225,37 @@ jobs:
           Invoke-WebRequest "https://ffmpeg.org/releases/ffmpeg-${env:FFMPEG_VERSION}.tar.xz" -OutFile "ffmpeg-${env:FFMPEG_VERSION}.tar.xz"
           $actual = (Get-FileHash "ffmpeg-${env:FFMPEG_VERSION}.tar.xz" -Algorithm SHA256).Hash
           if ($actual -ne $env:FFMPEG_SOURCE_SHA256) { throw "FFmpeg source SHA-256 mismatch: $actual" }
-          "$actual  ffmpeg-${env:FFMPEG_VERSION}.tar.xz" | Set-Content FFMPEG-SOURCE-SHA256.txt -NoNewline
+          Invoke-WebRequest "https://github.com/xiph/ogg/releases/download/v${env:OGG_VERSION}/libogg-${env:OGG_VERSION}.tar.xz" -OutFile "libogg-${env:OGG_VERSION}.tar.xz"
+          Invoke-WebRequest "https://github.com/xiph/theora/archive/${env:THEORA_COMMIT}.tar.gz" -OutFile "libtheora-1.2.0.tar.gz"
+          Invoke-WebRequest "https://code.videolan.org/videolan/x264/-/archive/${env:X264_COMMIT}/x264-${env:X264_COMMIT}.tar.gz" -OutFile "x264-${env:X264_COMMIT}.tar.gz"
+          Invoke-WebRequest "https://zlib.net/zlib-${env:ZLIB_VERSION}.tar.xz" -OutFile "zlib-${env:ZLIB_VERSION}.tar.xz"
+          $sources = @{
+            "ffmpeg-${env:FFMPEG_VERSION}.tar.xz" = $env:FFMPEG_SOURCE_SHA256
+            "libogg-${env:OGG_VERSION}.tar.xz" = $env:OGG_SOURCE_SHA256
+            'libtheora-1.2.0.tar.gz' = $env:THEORA_SOURCE_SHA256
+            "x264-${env:X264_COMMIT}.tar.gz" = $env:X264_SOURCE_SHA256
+            "zlib-${env:ZLIB_VERSION}.tar.xz" = $env:ZLIB_SOURCE_SHA256
+          }
+          $lines = foreach ($item in $sources.GetEnumerator()) {
+            $hash = (Get-FileHash $item.Key -Algorithm SHA256).Hash
+            if ($hash -ne $item.Value) { throw "$($item.Key) source SHA-256 mismatch: $hash" }
+            "$hash  $($item.Key)"
+          }
+          $lines | Sort-Object | Set-Content CODEC-SOURCES-SHA256.txt
       - uses: actions/upload-artifact@v7
         with:
-          name: release-ffmpeg-source
+          name: release-codec-sources
           path: |
             ffmpeg-${{ env.FFMPEG_VERSION }}.tar.xz
-            FFMPEG-SOURCE-SHA256.txt
+            libogg-${{ env.OGG_VERSION }}.tar.xz
+            libtheora-1.2.0.tar.gz
+            x264-${{ env.X264_COMMIT }}.tar.gz
+            zlib-${{ env.ZLIB_VERSION }}.tar.xz
+            CODEC-SOURCES-SHA256.txt
 
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, ffmpeg-source]
+    needs: [build, codec-sources]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v7
@@ -200,5 +270,5 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
           body: |
-            Official packages include standalone FFmpeg/ffprobe 9.0.1 command-line programs licensed under LGPL-2.1-or-later.
-            The exact corresponding source is attached as `ffmpeg-9.0.1.tar.xz`; license texts, build configuration, and the unmodified-source statement are included in each platform package.
+            Official packages include standalone FFmpeg/ffprobe 9.0.1 GPL Full command-line programs with libx264, libtheora, libogg, and zlib. No nonfree components are enabled.
+            Corresponding FFmpeg, x264, libtheora, libogg, and zlib sources are attached; license texts, build configuration, and checksums are included with the release.

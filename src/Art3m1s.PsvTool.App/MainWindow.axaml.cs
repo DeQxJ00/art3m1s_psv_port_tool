@@ -64,7 +64,7 @@ public sealed partial class MainWindow : Window
                     Children =
                     {
                         new TextBlock { Text = $"{ViewModel.Title} v{appVersion}", FontSize = 22, FontWeight = Avalonia.Media.FontWeight.Bold },
-                        new TextBlock { Text = $".NET 10 · Avalonia {avalonia} · ImageSharp {imageSharp} · FFmpeg 9.0.1 LGPL", TextWrapping = Avalonia.Media.TextWrapping.Wrap },
+                        new TextBlock { Text = $".NET 10 · Avalonia {avalonia} · ImageSharp {imageSharp} · FFmpeg 9.0.1 GPL Full", TextWrapping = Avalonia.Media.TextWrapping.Wrap },
                         new TextBlock { Text = ViewModel.AboutBody, TextWrapping = Avalonia.Media.TextWrapping.Wrap }
                     }
                 }

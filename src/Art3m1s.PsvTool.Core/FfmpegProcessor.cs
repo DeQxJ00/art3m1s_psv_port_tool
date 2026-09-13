@@ -6,7 +6,7 @@ namespace Art3m1s.PsvTool.Core;
 
 public interface IFfmpegProcessor
 {
-    Task ResizeAsync(string path, double ratio, CancellationToken cancellationToken = default);
+    Task ResizeAsync(string path, double ratio, bool convertDatToMp4 = false, CancellationToken cancellationToken = default);
 }
 
 public sealed class FfmpegProcessor : IFfmpegProcessor
@@ -20,36 +20,75 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
         _ffprobe = ffprobe ?? FindTool("ffprobe");
     }
 
-    public async Task ResizeAsync(string path, double ratio, CancellationToken cancellationToken = default)
+    public async Task ResizeAsync(string path, double ratio, bool convertDatToMp4 = false, CancellationToken cancellationToken = default)
     {
         VideoProbe probe = await ProbeAsync(path, cancellationToken);
+        if (convertDatToMp4 && Path.GetExtension(path).Equals(".dat", StringComparison.OrdinalIgnoreCase))
+        {
+            await ConvertDatToMp4Async(path, cancellationToken);
+            return;
+        }
+
         string outputCodec = probe.Codec.Equals("wmv3", StringComparison.OrdinalIgnoreCase) ? "wmv2" : probe.Codec;
         string quality = outputCodec.Equals("theora", StringComparison.OrdinalIgnoreCase) ? "8" : "2";
         string extension = Path.GetExtension(path);
         string temporary = Path.Combine(Path.GetDirectoryName(path)!, $".{Path.GetFileNameWithoutExtension(path)}.{Guid.NewGuid():N}{extension}");
-        string ratioText = ratio.ToString("0.########", CultureInfo.InvariantCulture);
-        string filter = $"scale=max(2,trunc(iw*{ratioText}/2)*2):max(2,trunc(ih*{ratioText}/2)*2):flags=bicubic";
+        (int targetWidth, int targetHeight) = CalculateScaledDimensions(probe.Width, probe.Height, ratio);
+        string filter = FormattableString.Invariant($"scale={targetWidth}:{targetHeight}:flags=bicubic");
+        string frameDirectory = Path.Combine(Path.GetTempPath(), "art3m1s-video-" + Guid.NewGuid().ToString("N"));
+        string framePattern = Path.Combine(frameDirectory, "frame_%08d.png");
+        Directory.CreateDirectory(frameDirectory);
         try
         {
-            List<string> arguments = ["-hide_banner", "-loglevel", "error", "-y", "-i", path, "-map", "0:v:0", "-map", "0:a?",
-                "-vf", filter, "-c:v", outputCodec, "-q:v", quality, "-c:a", "copy"];
+            // VisualNovelUpscaler decodes every frame with vsync disabled, processes the
+            // image sequence, then rebuilds it at the detected frame rate. Scaling during
+            // extraction avoids an unnecessary second PNG pass while retaining that timing.
+            await RunAsync(_ffmpeg,
+                ["-hide_banner", "-loglevel", "error", "-y", "-i", path, "-map", "0:v:0",
+                 "-vf", filter, "-qscale:v", "1", "-qmin", "1", "-qmax", "1",
+                 "-fps_mode", "passthrough", "-threads", Environment.ProcessorCount.ToString(CultureInfo.InvariantCulture), framePattern],
+                cancellationToken);
+            if (!Directory.EnumerateFiles(frameDirectory, "*.png", SearchOption.TopDirectoryOnly).Any())
+                throw new InvalidDataException($"No video frames were decoded from {path}.");
+
+            List<string> arguments = ["-hide_banner", "-loglevel", "error", "-y",
+                "-r", probe.FrameRate, "-i", framePattern, "-i", path,
+                "-map", "0:v:0", "-map", "1:a:0?", "-c:a", "copy",
+                "-c:v", outputCodec, "-r", probe.FrameRate, "-q:v", quality,
+                "-threads", Environment.ProcessorCount.ToString(CultureInfo.InvariantCulture)];
             if (extension.Equals(".dat", StringComparison.OrdinalIgnoreCase))
             {
                 arguments.Add("-f"); arguments.Add(NormalizeMuxer(probe.Format));
             }
             arguments.Add(temporary);
-            try
-            {
-                await RunAsync(_ffmpeg, arguments, cancellationToken);
-            }
-            catch (InvalidOperationException) when (!outputCodec.Equals("mpeg4", StringComparison.OrdinalIgnoreCase) && !outputCodec.Equals("theora", StringComparison.OrdinalIgnoreCase) && !outputCodec.Equals("wmv2", StringComparison.OrdinalIgnoreCase))
-            {
-                if (File.Exists(temporary)) File.Delete(temporary);
-                int codecIndex = arguments.IndexOf("-c:v") + 1;
-                arguments[codecIndex] = "mpeg4";
-                await RunAsync(_ffmpeg, arguments, cancellationToken);
-            }
+            await RunAsync(_ffmpeg, arguments, cancellationToken);
             File.Move(temporary, path, true);
+        }
+        finally
+        {
+            if (File.Exists(temporary)) File.Delete(temporary);
+            if (Directory.Exists(frameDirectory)) Directory.Delete(frameDirectory, true);
+        }
+    }
+
+    private async Task ConvertDatToMp4Async(string path, CancellationToken cancellationToken)
+    {
+        string destination = Path.ChangeExtension(path, ".mp4");
+        if (File.Exists(destination))
+            throw new IOException($"Cannot convert DAT because the destination already exists: {destination}");
+        string temporary = Path.Combine(Path.GetDirectoryName(path)!, $".{Path.GetFileNameWithoutExtension(path)}.{Guid.NewGuid():N}.mp4");
+        try
+        {
+            // The verified PSV reference uses this fixed hardware-friendly format for DAT:
+            // 960x544 H.264 Main@3.1 with AAC audio, regardless of the source resolution.
+            await RunAsync(_ffmpeg,
+                ["-hide_banner", "-loglevel", "error", "-y", "-i", path,
+                 "-map", "0:v:0", "-map", "0:a:0?", "-vf", "scale=960:544:flags=bicubic",
+                 "-c:v", "libx264", "-profile:v", "main", "-level:v", "3.1", "-pix_fmt", "yuv420p",
+                 "-crf", "23", "-c:a", "aac", "-b:a", "128k", "-ar", "48000",
+                 "-movflags", "+faststart", temporary], cancellationToken);
+            File.Move(temporary, destination);
+            File.Delete(path);
         }
         finally
         {
@@ -60,7 +99,7 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
     private async Task<VideoProbe> ProbeAsync(string path, CancellationToken cancellationToken)
     {
         string json = await RunAsync(_ffprobe,
-            ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name:format=format_name", "-of", "json", path],
+            ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name,width,height,avg_frame_rate,r_frame_rate:format=format_name", "-of", "json", path],
             cancellationToken);
         using JsonDocument document = JsonDocument.Parse(json);
         JsonElement streams = document.RootElement.GetProperty("streams");
@@ -68,9 +107,45 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
             throw new InvalidDataException($"No video stream found in {path}.");
         string codec = streams[0].GetProperty("codec_name").GetString()
             ?? throw new InvalidDataException($"Video codec is missing in {path}.");
+        int width = streams[0].GetProperty("width").GetInt32();
+        int height = streams[0].GetProperty("height").GetInt32();
+        if (width <= 0 || height <= 0)
+            throw new InvalidDataException($"Video dimensions are invalid in {path}.");
+        string frameRate = ReadFrameRate(streams[0]);
         string format = document.RootElement.TryGetProperty("format", out JsonElement formatElement) && formatElement.TryGetProperty("format_name", out JsonElement nameElement)
             ? nameElement.GetString() ?? string.Empty : string.Empty;
-        return new VideoProbe(codec, format);
+        return new VideoProbe(codec, format, width, height, frameRate);
+    }
+
+    internal static (int Width, int Height) CalculateScaledDimensions(int width, int height, double ratio)
+    {
+        if (width <= 0) throw new ArgumentOutOfRangeException(nameof(width));
+        if (height <= 0) throw new ArgumentOutOfRangeException(nameof(height));
+        if (ratio <= 0 || ratio > 1 || double.IsNaN(ratio) || double.IsInfinity(ratio))
+            throw new ArgumentOutOfRangeException(nameof(ratio));
+
+        // VisualNovelUpscaler resizes extracted frames with Python int(), which truncates
+        // positive dimensions toward zero. Do not round or force dimensions to be even.
+        return (Math.Max(1, (int)(width * ratio)), Math.Max(1, (int)(height * ratio)));
+    }
+
+    private static string ReadFrameRate(JsonElement stream)
+    {
+        foreach (string propertyName in new[] { "avg_frame_rate", "r_frame_rate" })
+        {
+            if (!stream.TryGetProperty(propertyName, out JsonElement property)) continue;
+            string? rational = property.GetString();
+            if (string.IsNullOrWhiteSpace(rational)) continue;
+            string[] parts = rational.Split('/');
+            if (parts.Length != 2 ||
+                !double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double numerator) ||
+                !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double denominator) ||
+                denominator == 0) continue;
+            double value = numerator / denominator;
+            if (value > 0 && double.IsFinite(value))
+                return value.ToString("0.00", CultureInfo.InvariantCulture);
+        }
+        throw new InvalidDataException("The video frame rate is missing or invalid.");
     }
 
     private static string NormalizeMuxer(string format)
@@ -112,5 +187,5 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
         return executable;
     }
 
-    private sealed record VideoProbe(string Codec, string Format);
+    private sealed record VideoProbe(string Codec, string Format, int Width, int Height, string FrameRate);
 }

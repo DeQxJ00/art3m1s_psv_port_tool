@@ -109,6 +109,7 @@ public sealed class ConversionService : IConversionService
             await ProcessTreeAsync(work, options, progress, cancellationToken, skipPfs: false,
                 progressStart: 100d * (archiveIndex + 0.05) / totalUnits,
                 progressSpan: 100d * 0.85 / totalUnits);
+            extracted = RemapConvertedDatEntries(extracted);
             string destination = Path.Combine(staging, archive.FileName);
             string temporary = destination + ".packing";
             progress?.Report(new ConversionProgress(100d * (archiveIndex + 0.9) / totalUnits, "pack", archive.FileName));
@@ -155,7 +156,12 @@ public sealed class ConversionService : IConversionService
                      (VideoExtensions.Contains(extension) && options.Categories.HasFlag(AssetCategories.Video)))
             {
                 await videoSlots.WaitAsync(token);
-                try { await _ffmpeg.ResizeAsync(path, options.Ratio, token); }
+                try
+                {
+                    await _ffmpeg.ResizeAsync(path, options.Ratio,
+                        convertDatToMp4: extension.Equals(".dat", StringComparison.OrdinalIgnoreCase),
+                        cancellationToken: token);
+                }
                 finally { videoSlots.Release(); }
             }
 
@@ -165,6 +171,27 @@ public sealed class ConversionService : IConversionService
             double fraction = files.Length == 0 ? 1 : (double)done / files.Length;
             progress?.Report(new ConversionProgress(progressStart + progressSpan * fraction, "resource", Entry: Path.GetRelativePath(root, path)));
         });
+    }
+
+    private static ExtractedArchive RemapConvertedDatEntries(ExtractedArchive archive)
+    {
+        PfsEntry[] entries = archive.Entries.Select(entry =>
+        {
+            if (!Path.GetExtension(entry.Path).Equals(".dat", StringComparison.OrdinalIgnoreCase) || File.Exists(entry.ExtractedPath))
+                return entry;
+            string convertedPath = Path.ChangeExtension(entry.ExtractedPath, ".mp4");
+            if (!File.Exists(convertedPath))
+                throw new FileNotFoundException("Converted PFS DAT entry is missing.", convertedPath);
+            string convertedName = Path.ChangeExtension(entry.Path, ".mp4");
+            byte[] rawName = entry.RawName.ToArray();
+            if (rawName.Length < 4 || rawName[^4] != (byte)'.')
+                throw new InvalidDataException($"Cannot replace the DAT extension in PFS entry: {entry.Path}");
+            rawName[^3] = (byte)'m';
+            rawName[^2] = (byte)'p';
+            rawName[^1] = (byte)'4';
+            return entry with { RawName = rawName, Path = convertedName, ExtractedPath = convertedPath };
+        }).ToArray();
+        return archive with { Entries = entries };
     }
 
     private static async Task<IReadOnlySet<int>> CollectUsedCodePointsAsync(IEnumerable<string> files, CancellationToken cancellationToken)

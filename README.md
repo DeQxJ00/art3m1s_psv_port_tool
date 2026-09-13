@@ -5,7 +5,7 @@
 [![CI](https://github.com/DeQxJ00/art3m1s_psv_port_tool/actions/workflows/ci.yml/badge.svg)](https://github.com/DeQxJ00/art3m1s_psv_port_tool/actions/workflows/ci.yml)
 [![Release](https://github.com/DeQxJ00/art3m1s_psv_port_tool/actions/workflows/release.yml/badge.svg)](https://github.com/DeQxJ00/art3m1s_psv_port_tool/actions/workflows/release.yml)
 
-面向 Artemis 引擎游戏的 PSV 移植辅助工具。它逐个解包物理 PFS、按选择缩小资源，再以相同文件名重新打包；PFS 之外的文件与目录也会复制到输出项目。应用使用 .NET 10、Avalonia 12、C# 14 与 NativeAOT，支持 Windows、Linux 和 macOS。
+面向 Artemis 引擎游戏的 PSV 移植辅助工具。它逐个解包物理 PFS、按选择缩小资源，再以相同文件名重新打包；根目录下 PFS 之外任意名称的文件夹也会完整递归复制，并按文件扩展名转换其中资源（至少覆盖 3 层，实际不限制深度）。应用使用 .NET 10、Avalonia 12、C# 14 与 NativeAOT，支持 Windows、Linux 和 macOS。
 
 > 请只处理你有权修改的游戏资源，并先备份原项目。工具不绕过平台签名、加密授权或 DRM。
 
@@ -17,7 +17,7 @@
 
 ## 下载与平台支持
 
-Release 提供 `win-x64`、`linux-x64` NativeAOT 单文件，以及未签名、未公证的 `osx-x64` / `osx-arm64` `.app.zip`。macOS 首次启动可能需要在“隐私与安全性”中手动允许。FFmpeg/ffprobe 9.0.1 LGPL 可执行文件位于发行包的 `tools` 目录，不嵌入主程序；开发构建也可通过 `ART3M1S_FFMPEG` 与 `ART3M1S_FFPROBE` 指定工具。
+Release 提供 `win-x64`、`linux-x64` NativeAOT 单文件，以及未签名、未公证的 `osx-x64` / `osx-arm64` `.app.zip`。macOS 首次启动可能需要在“隐私与安全性”中手动允许。FFmpeg/ffprobe 9.0.1 GPL Full 可执行文件位于发行包的 `tools` 目录，不嵌入主程序；构建包含 x264、libtheora、libogg 与 zlib，不包含 nonfree 组件。开发构建也可通过 `ART3M1S_FFMPEG` 与 `ART3M1S_FFPROBE` 指定工具。
 
 ## 使用步骤
 
@@ -34,10 +34,10 @@ Release 提供 `win-x64`、`linux-x64` NativeAOT 单文件，以及未签名、�
 
 ## 资源处理规则
 
-- 文本：INI / TBL / IPT / AST / LUA 的 Artemis 坐标、尺寸与字号按 Ratio 缩放，保留 UTF-8 / Shift_JIS、BOM 和换行；IET 原样复制。
+- 文本：INI / TBL / IPT / AST / LUA 严格复刻 VisualNovelUpscaler 的 Artemis 匹配、取整、编码与输出行为；IET 原样复制。
 - 图片：PNG 使用 ImageSharp 的 Alpha 预乘高质量 Bicubic，仅缩放，不进行 PNG 优化、调色板压缩、waifu2x 或有损压缩。
-- 动画：OGV 使用 FFmpeg Bicubic，保持帧率与音频。
-- 视频：WMV / DAT / MP4 / AVI / MPG / MKV 尽量保持原视频编码并复制音频；WMV3 转为 WMV2。
+- 动画：OGV 使用 FFmpeg Bicubic；目标宽高与 VisualNovelUpscaler 一样分别按 `int(原尺寸 × Ratio)` 截断，保持帧率与音频。
+- 视频：DAT（包括 PFS 内条目）固定输出为同名 MP4（960×544、H.264 Main@3.1、AAC），扩展名相应从 `.dat` 改为 `.mp4`；WMV / MP4 / AVI / MPG / MKV 使用 Ratio 尺寸截断规则，尽量保持原视频编码并复制音频，WMV3 转为 WMV2。
 - 字体（可选）：对 TrueType `glyf` 字体按简体中文、日文或繁体中文常用范围削减轮廓，同时始终保留脚本中实际出现的字符、ASCII、常用标点与全角/半角符号；复合字形依赖会递归保留。CFF/CFF2、TTC 与可变字体为避免损坏会原样保留。
 - 未勾选类型按字节复制，不执行转换。
 
@@ -78,4 +78,8 @@ dotnet publish src/Art3m1s.PsvTool.App -c Release -r win-x64
 | **Avalonia** | MIT | 跨平台桌面 UI（12.1.2） | [AvaloniaUI/Avalonia](https://github.com/AvaloniaUI/Avalonia) |
 | **SixLabors.ImageSharp** | Six Labors Split License 1.0 | PNG 解码与 Bicubic 缩放（3.1.12） | [SixLabors/ImageSharp](https://github.com/SixLabors/ImageSharp) |
 | **Optris.StaticGraphics.Avalonia.Software** | MIT fork 及上游组件许可证 | NativeAOT 静态 Skia / HarfBuzz 图形后端 | [NuGet](https://www.nuget.org/packages/Optris.StaticGraphics.Avalonia.Software) |
-| **FFmpeg / ffprobe** | LGPL-2.1-or-later 构建 | 动画与视频探测、缩放及转码（9.0.1） | [FFmpeg 9.0.1 源码](https://ffmpeg.org/releases/ffmpeg-9.0.1.tar.xz) |
+| **FFmpeg / ffprobe** | GPL-2.0-or-later Full 构建 | 动画与视频探测、缩放及转码（9.0.1） | [FFmpeg 9.0.1 源码](https://ffmpeg.org/releases/ffmpeg-9.0.1.tar.xz) |
+| **x264** | GPL-2.0 | H.264 编码 | [VideoLAN/x264](https://code.videolan.org/videolan/x264) |
+| **libtheora** | BSD-3-Clause | Theora 编码 | [Xiph.Org/libtheora](https://github.com/xiph/theora) |
+| **libogg** | BSD-3-Clause | Ogg 容器 | [Xiph.Org/libogg](https://github.com/xiph/ogg) |
+| **zlib** | Zlib | PNG 帧序列压缩 | [zlib](https://zlib.net/) |

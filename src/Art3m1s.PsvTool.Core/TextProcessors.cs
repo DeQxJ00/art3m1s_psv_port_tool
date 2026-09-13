@@ -16,6 +16,13 @@ public interface IVitaIniProcessor
 
 public sealed partial class ArtemisTextProcessor : ITextProcessor
 {
+    private static readonly string[] TblListKeys = ["game_scale", "game_wasmbar", "fontsize", "line_size", "line_window", "line_back", "line_scroll", "line_name01", "line_name02"];
+    private static readonly string[] TblScalarKeys = ["x", "y", "w", "h", "r", "cx", "cy", "cw", "ch", "fx", "fy", "fw", "fh", "left", "top", "size", "width", "height", "spacetop", "spacemiddle", "spacebottom", "kerning", "rubysize"];
+    private static readonly string[] TblClipKeys = ["clip", "clip_a", "clip_c", "clip_d"];
+    private static readonly string[] IptKeys = ["x", "y", "w", "h", "ax", "ay"];
+    private static readonly string[] AstKeys = ["mx", "my", "ax", "ay", "bx", "by", "x", "y", "x2", "y2"];
+    private static readonly string[] LuaKeys = ["width", "height", "left", "top", "x", "y"];
+
     public async Task ProcessAsync(string path, double ratio, CancellationToken cancellationToken = default)
     {
         byte[] bytes = await File.ReadAllBytesAsync(path, cancellationToken);
@@ -38,12 +45,36 @@ public sealed partial class ArtemisTextProcessor : ITextProcessor
     {
         StringBuilder result = new(text.Length);
         bool inVita = false;
+        bool insertedSavePath = false;
         foreach (string line in SplitLines(text))
         {
             Match section = SectionRegex().Match(line);
             if (section.Success)
                 inVita = section.Groups[1].Value.Equals("VITA", StringComparison.OrdinalIgnoreCase);
-            result.Append(inVita ? line : IniSizeRegex().Replace(line, match => ScaleMatch(match, ratio)));
+            string transformed = line;
+            if (!inVita)
+            {
+                Match size = Regex.Match(transformed, @"^(WIDTH|HEIGHT)(\W+)(\d+)(.*)", RegexOptions.CultureInvariant);
+                if (size.Success)
+                    transformed = ScalePythonMatch(size, ratio);
+                Match savePath = Regex.Match(transformed, @"^(;?)(SAVEPATH.*)", RegexOptions.CultureInvariant);
+                if (savePath.Success)
+                {
+                    if (savePath.Groups[1].Value.Length != 0)
+                    {
+                        if (!insertedSavePath)
+                        {
+                            transformed = "SAVEPATH = savedataHD\r\n";
+                            insertedSavePath = true;
+                        }
+                    }
+                    else
+                    {
+                        transformed = ";" + transformed;
+                    }
+                }
+            }
+            result.Append(transformed);
         }
         return result.ToString();
     }
@@ -53,11 +84,32 @@ public sealed partial class ArtemisTextProcessor : ITextProcessor
         StringBuilder result = new(text.Length);
         foreach (string line in SplitLines(text))
         {
-            string scaled = TblBraceRegex().Replace(line, match =>
-                match.Groups[1].Value + IntegerRegex().Replace(match.Groups[2].Value, number => ScaleNumber(number.Value, ratio)) + match.Groups[3].Value);
-            scaled = TblFieldRegex().Replace(scaled, match => ScaleMatch(match, ratio));
-            scaled = TblClipRegex().Replace(scaled, match =>
-                match.Groups[1].Value + ScaleCommaList(match.Groups[2].Value, ratio) + match.Groups[3].Value);
+            string scaled = line;
+            foreach (string key in TblListKeys)
+            {
+                if (!scaled.StartsWith(key, StringComparison.Ordinal)) continue;
+                Match match = Regex.Match(scaled, @"^(" + Regex.Escape(key) + @"\W+?\{)(.*?)(\}.*)", RegexOptions.CultureInvariant);
+                if (match.Success)
+                    scaled = match.Groups[1].Value + ScaleCommaList(match.Groups[2].Value, ratio) + match.Groups[3].Value;
+            }
+            foreach (string key in TblScalarKeys)
+            {
+                Match match = Regex.Match(scaled, @"^(.*\W+" + Regex.Escape(key) + @"\W+)(\d+)(.*)", RegexOptions.CultureInvariant);
+                if (match.Success)
+                    scaled = ScalePythonMatch(match, ratio);
+            }
+            foreach (string key in TblClipKeys)
+            {
+                Match match = Regex.Match(scaled, @"^(.*\W+" + Regex.Escape(key) + "\\W+?\")(.*?)(\".*)", RegexOptions.CultureInvariant);
+                if (match.Success)
+                    scaled = match.Groups[1].Value + ScaleCommaList(match.Groups[2].Value, ratio) + match.Groups[3].Value;
+            }
+            foreach (string key in new[] { "game_width", "game_height" })
+            {
+                Match match = Regex.Match(scaled, @"^(" + key + @"\W+)(\d+)(.*)", RegexOptions.CultureInvariant);
+                if (match.Success)
+                    scaled = ScalePythonMatch(match, ratio);
+            }
             result.Append(scaled);
         }
         return result.ToString();
@@ -68,25 +120,61 @@ public sealed partial class ArtemisTextProcessor : ITextProcessor
         StringBuilder result = new(text.Length);
         foreach (string line in SplitLines(text))
         {
-            string scaled = IptFieldRegex().Replace(line, match => ScaleMatch(match, ratio));
-            scaled = QuotedCommaRegex().Replace(scaled, match =>
-                match.Groups[1].Value + ScaleCommaList(match.Groups[2].Value, ratio) + match.Groups[3].Value);
+            string scaled = line;
+            foreach (string key in IptKeys)
+            {
+                Match match = Regex.Match(scaled, @"^(.*\W+" + Regex.Escape(key) + @"\W+)(\d+)(.*)", RegexOptions.CultureInvariant);
+                if (match.Success)
+                    scaled = ScalePythonMatch(match, ratio);
+            }
+            Match quoted = Regex.Match(scaled, "^(.*\\W+\")(\\d+.*?)(\".*)", RegexOptions.CultureInvariant);
+            if (quoted.Success)
+                scaled = quoted.Groups[1].Value + ScaleCommaList(quoted.Groups[2].Value, ratio) + quoted.Groups[3].Value;
             result.Append(scaled);
         }
         return result.ToString();
     }
 
-    private static string ScaleAst(string text, double ratio) =>
-        AstFieldRegex().Replace(text, match => ScaleMatch(match, ratio));
+    private static string ScaleAst(string text, double ratio) => ScaleLinesByKeys(text, ratio, AstKeys, allowNegative: true).Text;
 
-    private static string ScaleLua(string text, double ratio) =>
-        LuaFieldRegex().Replace(text, match => ScaleMatch(match, ratio));
+    private static string ScaleLua(string text, double ratio)
+    {
+        (string output, bool changed) = ScaleLinesByKeys(text, ratio, LuaKeys, allowNegative: false);
+        return changed ? output : text;
+    }
 
-    private static string ScaleMatch(Match match, double ratio) =>
-        match.Groups[1].Value + ScaleNumber(match.Groups[2].Value, ratio);
+    private static (string Text, bool Changed) ScaleLinesByKeys(string text, double ratio, IReadOnlyList<string> keys, bool allowNegative)
+    {
+        StringBuilder result = new(text.Length);
+        bool changed = false;
+        string numberPattern = allowNegative ? @"-?\d+" : @"\d+";
+        foreach (string line in SplitLines(text))
+        {
+            string scaled = line;
+            foreach (string key in keys)
+            {
+                Match match = Regex.Match(scaled, @"^(.*\W+" + Regex.Escape(key) + @"\W+?)(" + numberPattern + @")(.*)", RegexOptions.CultureInvariant);
+                if (!match.Success) continue;
+                scaled = ScalePythonMatch(match, ratio);
+                changed = true;
+            }
+            result.Append(scaled);
+        }
+        return (result.ToString(), changed);
+    }
 
-    private static string ScaleNumber(string value, double ratio) =>
-        ((int)(int.Parse(value, CultureInfo.InvariantCulture) * ratio)).ToString(CultureInfo.InvariantCulture);
+    private static string ScalePythonMatch(Match match, double ratio)
+    {
+        StringBuilder result = new(match.Length);
+        for (int index = 1; index < match.Groups.Count; index++)
+        {
+            string value = match.Groups[index].Value;
+            result.Append(double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double number)
+                ? ((int)(number * ratio)).ToString(CultureInfo.InvariantCulture)
+                : value);
+        }
+        return result.ToString();
+    }
 
     private static string ScaleCommaList(string value, double ratio)
     {
@@ -117,24 +205,6 @@ public sealed partial class ArtemisTextProcessor : ITextProcessor
 
     [GeneratedRegex(@"^\s*\[([^\]]+)\]", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex SectionRegex();
-    [GeneratedRegex(@"(?im)^(\s*(?:WIDTH|HEIGHT)\s*=\s*)(-?\d+)", RegexOptions.CultureInvariant)]
-    private static partial Regex IniSizeRegex();
-    [GeneratedRegex(@"(?i)(^\s*(?:game_scale|game_wasmbar|fontsize|line_size|line_window|line_back|line_scroll|line_name01|line_name02)\s*\{)(.*?)(\})", RegexOptions.CultureInvariant)]
-    private static partial Regex TblBraceRegex();
-    [GeneratedRegex(@"(?i)(\b(?:x|y|w|h|r|cx|cy|cw|ch|fx|fy|fw|fh|left|top|size|width|height|spacetop|spacemiddle|spacebottom|kerning|rubysize|game_width|game_height)\s*[:=,]\s*)(-?\d+)", RegexOptions.CultureInvariant)]
-    private static partial Regex TblFieldRegex();
-    [GeneratedRegex("(?i)(\\b(?:clip|clip_a|clip_c|clip_d)\\s*[:=]\\s*\")(.*?)(\")", RegexOptions.CultureInvariant)]
-    private static partial Regex TblClipRegex();
-    [GeneratedRegex(@"(?i)(\b(?:x|y|w|h|ax|ay)\s*[:=,]\s*)(-?\d+)", RegexOptions.CultureInvariant)]
-    private static partial Regex IptFieldRegex();
-    [GeneratedRegex("(\")(.*?,.*?)(\")", RegexOptions.CultureInvariant)]
-    private static partial Regex QuotedCommaRegex();
-    [GeneratedRegex(@"(?i)(\b(?:mx|my|ax|ay|bx|by|x|y|x2|y2)\s*[:=,]\s*)(-?\d+)", RegexOptions.CultureInvariant)]
-    private static partial Regex AstFieldRegex();
-    [GeneratedRegex(@"(?i)(\b(?:width|height|left|top|x|y)\s*=\s*)(-?\d+)", RegexOptions.CultureInvariant)]
-    private static partial Regex LuaFieldRegex();
-    [GeneratedRegex(@"-?\d+", RegexOptions.CultureInvariant)]
-    private static partial Regex IntegerRegex();
 }
 
 public sealed partial class VitaIniProcessor : IVitaIniProcessor
