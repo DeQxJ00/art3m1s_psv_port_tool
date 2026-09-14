@@ -125,10 +125,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (ProcessText) categories |= AssetCategories.Text; if (ProcessImages) categories |= AssetCategories.Images;
         if (ProcessAnimation) categories |= AssetCategories.Animation; if (ProcessVideo) categories |= AssetCategories.Video;
         _conversionCancellation = new CancellationTokenSource(); IsBusy = true; Progress = 0; Log = string.Empty;
+        string? activeArchive = null;
+        string? activeEntry = null;
         try
         {
             Progress<ConversionProgress> reporter = new(value =>
             {
+                activeArchive = value.Archive;
+                activeEntry = value.Entry;
                 Progress = value.Percent; Status = LocalizeStage(value.Stage);
                 if (!string.IsNullOrWhiteSpace(value.Entry)) Log += value.Entry + Environment.NewLine;
             });
@@ -136,7 +140,16 @@ public sealed class MainViewModel : INotifyPropertyChanged
             Status = L("Finished");
         }
         catch (OperationCanceledException) { Status = L("Cancel"); }
-        catch (Exception ex) { Status = $"{L("Failed")}: {ex.Message}"; }
+        catch (ConversionItemException ex)
+        {
+            Status = $"{L("Failed")}: {ex.Message}";
+            AppendFailure(ex.Archive ?? activeArchive, ex.Entry ?? activeEntry, ex.InnerException?.Message ?? ex.Message);
+        }
+        catch (Exception ex)
+        {
+            Status = $"{L("Failed")}: {ex.Message}";
+            AppendFailure(activeArchive, activeEntry, ex.Message);
+        }
         finally { _conversionCancellation.Dispose(); _conversionCancellation = null; IsBusy = false; _overwriteArmed = false; }
     }
 
@@ -163,6 +176,16 @@ public sealed class MainViewModel : INotifyPropertyChanged
         "complete" => L("StageComplete"),
         _ => stage
     };
+    private void AppendFailure(string? archive, string? entry, string reason)
+    {
+        List<string> details = [$"--- {L("FailureDetails")} ---"];
+        if (!string.IsNullOrWhiteSpace(archive)) details.Add($"{L("ErrorArchive")}: {archive}");
+        if (!string.IsNullOrWhiteSpace(entry)) details.Add($"{L("ErrorFile")}: {entry}");
+        details.Add($"{L("ErrorReason")}: {reason}");
+        if (!string.IsNullOrEmpty(Log) && !Log.EndsWith(Environment.NewLine, StringComparison.Ordinal))
+            Log += Environment.NewLine;
+        Log += string.Join(Environment.NewLine, details) + Environment.NewLine;
+    }
     private void SaveSettings()
     {
         try { _settings.Save(new AppSettings(Language, IsDark)); }

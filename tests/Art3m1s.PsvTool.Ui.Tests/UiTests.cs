@@ -1,4 +1,5 @@
 using Art3m1s.PsvTool.App;
+using Art3m1s.PsvTool.Core;
 using Xunit;
 
 namespace Art3m1s.PsvTool.Ui.Tests;
@@ -35,10 +36,42 @@ public sealed class UiTests
         Assert.False(store.Value.IsDark);
     }
 
+    [Fact]
+    public async Task ConversionFailureLogShowsExactArchiveFileAndReason()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "art3m1s-ui-error-" + Guid.NewGuid().ToString("N"));
+        string input = Path.Combine(root, "input");
+        Directory.CreateDirectory(input);
+        try
+        {
+            MainViewModel viewModel = new(converter: new FailingConversionService(), settings: new MemorySettingsStore())
+            {
+                InputDirectory = input,
+                OutputDirectory = Path.Combine(root, "output")
+            };
+
+            await viewModel.StartAsync();
+
+            Assert.Contains("PFS 归档: root.pfs.010", viewModel.Log);
+            Assert.Contains("错误文件: image\\bg\\broken.png", viewModel.Log);
+            Assert.Contains("错误原因: invalid PNG", viewModel.Log);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
     private sealed class MemorySettingsStore : ISettingsStore
     {
         public AppSettings Value { get; private set; } = new();
         public AppSettings Load() => Value;
         public void Save(AppSettings settings) => Value = settings;
+    }
+
+    private sealed class FailingConversionService : IConversionService
+    {
+        public Task ConvertAsync(ConversionOptions options, IProgress<ConversionProgress>? progress = null, CancellationToken cancellationToken = default) =>
+            Task.FromException(new ConversionItemException("root.pfs.010", "image\\bg\\broken.png", new InvalidDataException("invalid PNG")));
     }
 }

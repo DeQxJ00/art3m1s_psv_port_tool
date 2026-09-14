@@ -76,6 +76,19 @@ public sealed record ConversionProgress(
     string? Archive = null,
     string? Entry = null);
 
+public sealed class ConversionItemException : Exception
+{
+    public ConversionItemException(string? archive, string? entry, Exception innerException)
+        : base(innerException.Message, innerException)
+    {
+        Archive = archive;
+        Entry = entry;
+    }
+
+    public string? Archive { get; }
+    public string? Entry { get; }
+}
+
 public sealed record PfsEntry(
     byte[] RawName,
     string Path,

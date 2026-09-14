@@ -79,7 +79,7 @@ public sealed class ConversionService : IConversionService
             }
 
             progress?.Report(new ConversionProgress(100d * scan.Archives.Count / total, "loose"));
-            await ProcessTreeAsync(staging, options, progress, cancellationToken, skipPfs: true, preserveDat: false,
+            await ProcessTreeAsync(staging, options, progress, cancellationToken, archiveName: null, skipPfs: true, preserveDat: false,
                 progressStart: 100d * scan.Archives.Count / total, progressSpan: 100d / total);
             CommitDirectory(staging, outputFull, backup, options.OverwriteExisting);
             progress?.Report(new ConversionProgress(100, "complete"));
@@ -106,7 +106,7 @@ public sealed class ConversionService : IConversionService
         try
         {
             ExtractedArchive extracted = await _pfs.ExtractAsync(archive.Path, work, options.NameEncoding, cancellationToken);
-            await ProcessTreeAsync(work, options, progress, cancellationToken, skipPfs: false, preserveDat: true,
+            await ProcessTreeAsync(work, options, progress, cancellationToken, archive.FileName, skipPfs: false, preserveDat: true,
                 progressStart: 100d * (archiveIndex + 0.05) / totalUnits,
                 progressSpan: 100d * 0.85 / totalUnits);
             string destination = Path.Combine(staging, archive.FileName);
@@ -114,6 +114,12 @@ public sealed class ConversionService : IConversionService
             progress?.Report(new ConversionProgress(100d * (archiveIndex + 0.9) / totalUnits, "pack", archive.FileName));
             await _pfs.PackPf8Async(extracted, temporary, cancellationToken);
             File.Move(temporary, destination, true);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (ConversionItemException) { throw; }
+        catch (Exception exception)
+        {
+            throw new ConversionItemException(archive.FileName, null, exception);
         }
         finally
         {
@@ -128,6 +134,7 @@ public sealed class ConversionService : IConversionService
         ConversionOptions options,
         IProgress<ConversionProgress>? progress,
         CancellationToken cancellationToken,
+        string? archiveName,
         bool skipPfs,
         bool preserveDat,
         double progressStart,
@@ -146,36 +153,46 @@ public sealed class ConversionService : IConversionService
         }, async (path, token) =>
         {
             string extension = Path.GetExtension(path);
-            if (TextExtensions.Contains(extension) && options.Categories.HasFlag(AssetCategories.Text))
-                await _text.ProcessAsync(path, options.Ratio, token);
-            else if (extension.Equals(".png", StringComparison.OrdinalIgnoreCase) && options.Categories.HasFlag(AssetCategories.Images))
-                await _png.ResizeAsync(path, options.Ratio, token);
-            else if (options.SubsetFonts && extension.Equals(".ttf", StringComparison.OrdinalIgnoreCase))
-                await _fonts.SubsetAsync(path, options.FontProfile, usedCodePoints, token);
-            else if (preserveDat && extension.Equals(".dat", StringComparison.OrdinalIgnoreCase))
+            string relativePath = Path.GetRelativePath(root, path);
+            try
             {
-                // DAT files inside PFS archives can be arbitrary game data (for example
-                // font caches). Preserve every archived DAT verbatim; only loose DAT files
-                // are probed and converted when they contain a video stream.
-            }
-            else if ((AnimationExtensions.Contains(extension) && options.Categories.HasFlag(AssetCategories.Animation)) ||
-                     (VideoExtensions.Contains(extension) && options.Categories.HasFlag(AssetCategories.Video)))
-            {
-                await videoSlots.WaitAsync(token);
-                try
+                if (TextExtensions.Contains(extension) && options.Categories.HasFlag(AssetCategories.Text))
+                    await _text.ProcessAsync(path, options.Ratio, token);
+                else if (extension.Equals(".png", StringComparison.OrdinalIgnoreCase) && options.Categories.HasFlag(AssetCategories.Images))
+                    await _png.ResizeAsync(path, options.Ratio, token);
+                else if (options.SubsetFonts && extension.Equals(".ttf", StringComparison.OrdinalIgnoreCase))
+                    await _fonts.SubsetAsync(path, options.FontProfile, usedCodePoints, token);
+                else if (preserveDat && extension.Equals(".dat", StringComparison.OrdinalIgnoreCase))
                 {
-                    await _ffmpeg.ResizeAsync(path, options.Ratio,
-                        convertDatToMp4: extension.Equals(".dat", StringComparison.OrdinalIgnoreCase),
-                        cancellationToken: token);
+                    // DAT files inside PFS archives can be arbitrary game data (for example
+                    // font caches). Preserve every archived DAT verbatim; only loose DAT files
+                    // are probed and converted when they contain a video stream.
                 }
-                finally { videoSlots.Release(); }
+                else if ((AnimationExtensions.Contains(extension) && options.Categories.HasFlag(AssetCategories.Animation)) ||
+                         (VideoExtensions.Contains(extension) && options.Categories.HasFlag(AssetCategories.Video)))
+                {
+                    await videoSlots.WaitAsync(token);
+                    try
+                    {
+                        await _ffmpeg.ResizeAsync(path, options.Ratio,
+                            convertDatToMp4: extension.Equals(".dat", StringComparison.OrdinalIgnoreCase),
+                            cancellationToken: token);
+                    }
+                    finally { videoSlots.Release(); }
+                }
+
+                if (Path.GetFileName(path).Equals("system.ini", StringComparison.OrdinalIgnoreCase))
+                    await _vita.EnsureVitaSectionAsync(path, token);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception exception)
+            {
+                throw new ConversionItemException(archiveName, relativePath, exception);
             }
 
-            if (Path.GetFileName(path).Equals("system.ini", StringComparison.OrdinalIgnoreCase))
-                await _vita.EnsureVitaSectionAsync(path, token);
             int done = Interlocked.Increment(ref completed);
             double fraction = files.Length == 0 ? 1 : (double)done / files.Length;
-            progress?.Report(new ConversionProgress(progressStart + progressSpan * fraction, "resource", Entry: Path.GetRelativePath(root, path)));
+            progress?.Report(new ConversionProgress(progressStart + progressSpan * fraction, "resource", archiveName, relativePath));
         });
     }
 
