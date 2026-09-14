@@ -22,7 +22,20 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
 
     public async Task ResizeAsync(string path, double ratio, bool convertDatToMp4 = false, CancellationToken cancellationToken = default)
     {
-        VideoProbe probe = await ProbeAsync(path, cancellationToken);
+        string extension = Path.GetExtension(path);
+        bool isDat = extension.Equals(".dat", StringComparison.OrdinalIgnoreCase);
+        VideoProbe probe;
+        try
+        {
+            probe = await ProbeAsync(path, cancellationToken);
+        }
+        catch (Exception exception) when (isDat && exception is FfmpegProcessException or InvalidDataException or JsonException)
+        {
+            // Artemis uses .dat for both video containers and unrelated binary data
+            // such as font caches. An unrecognized DAT is not a broken video: leave it
+            // byte-for-byte unchanged and let archive repacking retain its original name.
+            return;
+        }
         if (convertDatToMp4 && Path.GetExtension(path).Equals(".dat", StringComparison.OrdinalIgnoreCase))
         {
             await ConvertDatToMp4Async(path, cancellationToken);
@@ -31,7 +44,6 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
 
         string outputCodec = probe.Codec.Equals("wmv3", StringComparison.OrdinalIgnoreCase) ? "wmv2" : probe.Codec;
         string quality = outputCodec.Equals("theora", StringComparison.OrdinalIgnoreCase) ? "8" : "2";
-        string extension = Path.GetExtension(path);
         string temporary = Path.Combine(Path.GetDirectoryName(path)!, $".{Path.GetFileNameWithoutExtension(path)}.{Guid.NewGuid():N}{extension}");
         (int targetWidth, int targetHeight) = CalculateScaledDimensions(probe.Width, probe.Height, ratio);
         string filter = FormattableString.Invariant($"scale={targetWidth}:{targetHeight}:flags=bicubic");
@@ -171,7 +183,7 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
         string output = await stdout;
         string error = await stderr;
         if (process.ExitCode != 0)
-            throw new InvalidOperationException($"{Path.GetFileName(executable)} failed ({process.ExitCode}): {error.Trim()}");
+            throw new FfmpegProcessException($"{Path.GetFileName(executable)} failed ({process.ExitCode}): {error.Trim()}");
         return output;
     }
 
@@ -188,4 +200,6 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
     }
 
     private sealed record VideoProbe(string Codec, string Format, int Width, int Height, string FrameRate);
+
+    private sealed class FfmpegProcessException(string message) : InvalidOperationException(message);
 }

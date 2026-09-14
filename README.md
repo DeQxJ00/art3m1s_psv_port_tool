@@ -37,7 +37,7 @@ Release 提供 `win-x64`、`linux-x64` NativeAOT 单文件，以及未签名、�
 - 文本：INI / TBL / IPT / AST / LUA 严格复刻 VisualNovelUpscaler 的 Artemis 匹配、取整、编码与输出行为；IET 原样复制。
 - 图片：PNG 使用 ImageSharp 的 Alpha 预乘高质量 Bicubic，仅缩放，不进行 PNG 优化、调色板压缩、waifu2x 或有损压缩。
 - 动画：OGV 使用 FFmpeg Bicubic；目标宽高与 VisualNovelUpscaler 一样分别按 `int(原尺寸 × Ratio)` 截断，保持帧率与音频。
-- 视频：DAT（包括 PFS 内条目）固定输出为同名 MP4（960×544、H.264 Main@3.1、AAC），扩展名相应从 `.dat` 改为 `.mp4`；WMV / MP4 / AVI / MPG / MKV 使用 Ratio 尺寸截断规则，尽量保持原视频编码并复制音频，WMV3 转为 WMV2。
+- 视频：PFS 内的 DAT 可能是字体缓存等普通数据，因此一律保持原文件名和原始字节，不进行视频探测或转换。PFS 外的 DAT 仅在检测到视频流时输出为同名 MP4（960×544、H.264 Main@3.1、AAC），普通数据 DAT 原样保留；WMV / MP4 / AVI / MPG / MKV 使用 Ratio 尺寸截断规则，尽量保持原视频编码并复制音频，WMV3 转为 WMV2。
 - 字体（可选）：对 TrueType `glyf` 字体按简体中文、日文或繁体中文常用范围削减轮廓，同时始终保留脚本中实际出现的字符、ASCII、常用标点与全角/半角符号；复合字形依赖会递归保留。CFF/CFF2、TTC 与可变字体为避免损坏会原样保留。
 - 未勾选类型按字节复制，不执行转换。
 

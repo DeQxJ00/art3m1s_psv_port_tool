@@ -79,7 +79,7 @@ public sealed class ConversionService : IConversionService
             }
 
             progress?.Report(new ConversionProgress(100d * scan.Archives.Count / total, "loose"));
-            await ProcessTreeAsync(staging, options, progress, cancellationToken, skipPfs: true,
+            await ProcessTreeAsync(staging, options, progress, cancellationToken, skipPfs: true, preserveDat: false,
                 progressStart: 100d * scan.Archives.Count / total, progressSpan: 100d / total);
             CommitDirectory(staging, outputFull, backup, options.OverwriteExisting);
             progress?.Report(new ConversionProgress(100, "complete"));
@@ -106,10 +106,9 @@ public sealed class ConversionService : IConversionService
         try
         {
             ExtractedArchive extracted = await _pfs.ExtractAsync(archive.Path, work, options.NameEncoding, cancellationToken);
-            await ProcessTreeAsync(work, options, progress, cancellationToken, skipPfs: false,
+            await ProcessTreeAsync(work, options, progress, cancellationToken, skipPfs: false, preserveDat: true,
                 progressStart: 100d * (archiveIndex + 0.05) / totalUnits,
                 progressSpan: 100d * 0.85 / totalUnits);
-            extracted = RemapConvertedDatEntries(extracted);
             string destination = Path.Combine(staging, archive.FileName);
             string temporary = destination + ".packing";
             progress?.Report(new ConversionProgress(100d * (archiveIndex + 0.9) / totalUnits, "pack", archive.FileName));
@@ -130,6 +129,7 @@ public sealed class ConversionService : IConversionService
         IProgress<ConversionProgress>? progress,
         CancellationToken cancellationToken,
         bool skipPfs,
+        bool preserveDat,
         double progressStart,
         double progressSpan)
     {
@@ -152,6 +152,12 @@ public sealed class ConversionService : IConversionService
                 await _png.ResizeAsync(path, options.Ratio, token);
             else if (options.SubsetFonts && extension.Equals(".ttf", StringComparison.OrdinalIgnoreCase))
                 await _fonts.SubsetAsync(path, options.FontProfile, usedCodePoints, token);
+            else if (preserveDat && extension.Equals(".dat", StringComparison.OrdinalIgnoreCase))
+            {
+                // DAT files inside PFS archives can be arbitrary game data (for example
+                // font caches). Preserve every archived DAT verbatim; only loose DAT files
+                // are probed and converted when they contain a video stream.
+            }
             else if ((AnimationExtensions.Contains(extension) && options.Categories.HasFlag(AssetCategories.Animation)) ||
                      (VideoExtensions.Contains(extension) && options.Categories.HasFlag(AssetCategories.Video)))
             {
@@ -171,27 +177,6 @@ public sealed class ConversionService : IConversionService
             double fraction = files.Length == 0 ? 1 : (double)done / files.Length;
             progress?.Report(new ConversionProgress(progressStart + progressSpan * fraction, "resource", Entry: Path.GetRelativePath(root, path)));
         });
-    }
-
-    private static ExtractedArchive RemapConvertedDatEntries(ExtractedArchive archive)
-    {
-        PfsEntry[] entries = archive.Entries.Select(entry =>
-        {
-            if (!Path.GetExtension(entry.Path).Equals(".dat", StringComparison.OrdinalIgnoreCase) || File.Exists(entry.ExtractedPath))
-                return entry;
-            string convertedPath = Path.ChangeExtension(entry.ExtractedPath, ".mp4");
-            if (!File.Exists(convertedPath))
-                throw new FileNotFoundException("Converted PFS DAT entry is missing.", convertedPath);
-            string convertedName = Path.ChangeExtension(entry.Path, ".mp4");
-            byte[] rawName = entry.RawName.ToArray();
-            if (rawName.Length < 4 || rawName[^4] != (byte)'.')
-                throw new InvalidDataException($"Cannot replace the DAT extension in PFS entry: {entry.Path}");
-            rawName[^3] = (byte)'m';
-            rawName[^2] = (byte)'p';
-            rawName[^1] = (byte)'4';
-            return entry with { RawName = rawName, Path = convertedName, ExtractedPath = convertedPath };
-        }).ToArray();
-        return archive with { Entries = entries };
     }
 
     private static async Task<IReadOnlySet<int>> CollectUsedCodePointsAsync(IEnumerable<string> files, CancellationToken cancellationToken)

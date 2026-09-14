@@ -212,7 +212,7 @@ public sealed class CoreTests : IDisposable
     }
 
     [Fact]
-    public async Task DatInsidePfsIsRepackedAsSameStemMp4()
+    public async Task DatInsidePfsIsPreservedWithOriginalNameAndBytes()
     {
         string input = Path.Combine(_root, "pfs-dat-game");
         string output = Path.Combine(_root, "pfs-dat-game-psv");
@@ -232,9 +232,23 @@ public sealed class CoreTests : IDisposable
 
         ExtractedArchive rebuilt = await codec.ExtractAsync(Path.Combine(output, "root.pfs"), Path.Combine(_root, "pfs-dat-verify"));
         PfsEntry entry = Assert.Single(rebuilt.Entries);
-        Assert.Equal("movie/opening.mp4", entry.Path);
-        Assert.Equal([0x50], await File.ReadAllBytesAsync(entry.ExtractedPath));
-        Assert.Contains(ffmpeg.Processed, item => item.ConvertDatToMp4);
+        Assert.Equal("movie/opening.dat", entry.Path);
+        Assert.Equal([1, 2, 3], await File.ReadAllBytesAsync(entry.ExtractedPath));
+        Assert.Empty(ffmpeg.Processed);
+    }
+
+    [Fact]
+    public async Task NonVideoDatIsKeptByteForByteWhenProbeRejectsIt()
+    {
+        string dat = Path.Combine(_root, "index.dat");
+        byte[] original = [0x41, 0x52, 0x54, 0x45, 0x4d, 0x49, 0x53];
+        await File.WriteAllBytesAsync(dat, original);
+
+        FfmpegProcessor processor = new(ffmpeg: "dotnet", ffprobe: "dotnet");
+        await processor.ResizeAsync(dat, 0.75, convertDatToMp4: true);
+
+        Assert.Equal(original, await File.ReadAllBytesAsync(dat));
+        Assert.False(File.Exists(Path.ChangeExtension(dat, ".mp4")));
     }
 
     [Fact]
