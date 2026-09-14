@@ -6,7 +6,7 @@ namespace Art3m1s.PsvTool.Core;
 
 public interface IFfmpegProcessor
 {
-    Task ResizeAsync(string path, double ratio, bool convertDatToMp4 = false, CancellationToken cancellationToken = default);
+    Task ResizeAsync(string path, double ratio, bool convertToH264Mp4 = false, CancellationToken cancellationToken = default);
 }
 
 public sealed class FfmpegProcessor : IFfmpegProcessor
@@ -20,7 +20,7 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
         _ffprobe = ffprobe ?? FindTool("ffprobe");
     }
 
-    public async Task ResizeAsync(string path, double ratio, bool convertDatToMp4 = false, CancellationToken cancellationToken = default)
+    public async Task ResizeAsync(string path, double ratio, bool convertToH264Mp4 = false, CancellationToken cancellationToken = default)
     {
         string extension = Path.GetExtension(path);
         bool isDat = extension.Equals(".dat", StringComparison.OrdinalIgnoreCase);
@@ -36,9 +36,9 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
             // byte-for-byte unchanged and let archive repacking retain its original name.
             return;
         }
-        if (convertDatToMp4 && Path.GetExtension(path).Equals(".dat", StringComparison.OrdinalIgnoreCase))
+        if (convertToH264Mp4)
         {
-            await ConvertDatToMp4Async(path, cancellationToken);
+            await ConvertToH264Mp4Async(path, probe, ratio, isDat, cancellationToken);
             return;
         }
 
@@ -83,24 +83,33 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
         }
     }
 
-    private async Task ConvertDatToMp4Async(string path, CancellationToken cancellationToken)
+    private async Task ConvertToH264Mp4Async(
+        string path,
+        VideoProbe probe,
+        double ratio,
+        bool useDatDimensions,
+        CancellationToken cancellationToken)
     {
         string destination = Path.ChangeExtension(path, ".mp4");
-        if (File.Exists(destination))
-            throw new IOException($"Cannot convert DAT because the destination already exists: {destination}");
+        bool replacesSource = destination.Equals(path, StringComparison.OrdinalIgnoreCase);
+        if (!replacesSource && File.Exists(destination))
+            throw new IOException($"Cannot convert video because the destination already exists: {destination}");
         string temporary = Path.Combine(Path.GetDirectoryName(path)!, $".{Path.GetFileNameWithoutExtension(path)}.{Guid.NewGuid():N}.mp4");
+        (int targetWidth, int targetHeight) = useDatDimensions
+            ? (960, 544)
+            : CalculateScaledDimensions(probe.Width, probe.Height, ratio);
         try
         {
-            // The verified PSV reference uses this fixed hardware-friendly format for DAT:
-            // 960x544 H.264 Main@3.1 with AAC audio, regardless of the source resolution.
+            // Loose videos are normalized to a PSV-friendly H.264/AAC MP4. The verified
+            // reference fixes DAT video at 960x544; other containers retain Ratio sizing.
             await RunAsync(_ffmpeg,
                 ["-hide_banner", "-loglevel", "error", "-y", "-i", path,
-                 "-map", "0:v:0", "-map", "0:a:0?", "-vf", "scale=960:544:flags=bicubic",
+                 "-map", "0:v:0", "-map", "0:a:0?", "-vf", $"scale={targetWidth}:{targetHeight}:flags=bicubic",
                  "-c:v", "libx264", "-profile:v", "main", "-level:v", "3.1", "-pix_fmt", "yuv420p",
                  "-crf", "23", "-c:a", "aac", "-b:a", "128k", "-ar", "48000",
                  "-movflags", "+faststart", temporary], cancellationToken);
-            File.Move(temporary, destination);
-            File.Delete(path);
+            File.Move(temporary, destination, replacesSource);
+            if (!replacesSource) File.Delete(path);
         }
         finally
         {

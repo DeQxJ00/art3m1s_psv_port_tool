@@ -181,6 +181,7 @@ public sealed class CoreTests : IDisposable
         string nestedAssets = Path.Combine(input, "arbitrary-name", "level-two", "level-three");
         Directory.CreateDirectory(nestedAssets);
         await File.WriteAllBytesAsync(Path.Combine(nestedAssets, "intro.dat"), [1, 2, 3]);
+        await File.WriteAllBytesAsync(Path.Combine(nestedAssets, "opening.wmv"), [7, 8, 9]);
         await File.WriteAllBytesAsync(Path.Combine(nestedAssets, "effect.ogv"), [4, 5, 6]);
 
         string payload = Path.Combine(_root, "required.bin");
@@ -192,11 +193,14 @@ public sealed class CoreTests : IDisposable
         await new ConversionService(ffmpeg: ffmpeg).ConvertAsync(new ConversionOptions(input, output, Ratio: 0.5,
             Categories: AssetCategories.Animation | AssetCategories.Video));
 
-        Assert.Equal(2, ffmpeg.Processed.Count);
-        Assert.Contains(ffmpeg.Processed, item => item.Path.EndsWith(Path.Combine("arbitrary-name", "level-two", "level-three", "intro.dat"), StringComparison.OrdinalIgnoreCase) && item.ConvertDatToMp4);
-        Assert.Contains(ffmpeg.Processed, item => item.Path.EndsWith(Path.Combine("arbitrary-name", "level-two", "level-three", "effect.ogv"), StringComparison.OrdinalIgnoreCase) && !item.ConvertDatToMp4);
+        Assert.Equal(3, ffmpeg.Processed.Count);
+        Assert.Contains(ffmpeg.Processed, item => item.Path.EndsWith(Path.Combine("arbitrary-name", "level-two", "level-three", "intro.dat"), StringComparison.OrdinalIgnoreCase) && item.ConvertToH264Mp4);
+        Assert.Contains(ffmpeg.Processed, item => item.Path.EndsWith(Path.Combine("arbitrary-name", "level-two", "level-three", "opening.wmv"), StringComparison.OrdinalIgnoreCase) && item.ConvertToH264Mp4);
+        Assert.Contains(ffmpeg.Processed, item => item.Path.EndsWith(Path.Combine("arbitrary-name", "level-two", "level-three", "effect.ogv"), StringComparison.OrdinalIgnoreCase) && !item.ConvertToH264Mp4);
         Assert.False(File.Exists(Path.Combine(output, "arbitrary-name", "level-two", "level-three", "intro.dat")));
+        Assert.False(File.Exists(Path.Combine(output, "arbitrary-name", "level-two", "level-three", "opening.wmv")));
         Assert.Equal([0x50], await File.ReadAllBytesAsync(Path.Combine(output, "arbitrary-name", "level-two", "level-three", "intro.mp4")));
+        Assert.Equal([0x50], await File.ReadAllBytesAsync(Path.Combine(output, "arbitrary-name", "level-two", "level-three", "opening.mp4")));
         Assert.Equal([0x50], await File.ReadAllBytesAsync(Path.Combine(output, "arbitrary-name", "level-two", "level-three", "effect.ogv")));
     }
 
@@ -245,7 +249,7 @@ public sealed class CoreTests : IDisposable
         await File.WriteAllBytesAsync(dat, original);
 
         FfmpegProcessor processor = new(ffmpeg: "dotnet", ffprobe: "dotnet");
-        await processor.ResizeAsync(dat, 0.75, convertDatToMp4: true);
+        await processor.ResizeAsync(dat, 0.75, convertToH264Mp4: true);
 
         Assert.Equal(original, await File.ReadAllBytesAsync(dat));
         Assert.False(File.Exists(Path.ChangeExtension(dat, ".mp4")));
@@ -335,12 +339,12 @@ public sealed class CoreTests : IDisposable
 
     private sealed class RecordingFfmpegProcessor : IFfmpegProcessor
     {
-        public List<(string Path, bool ConvertDatToMp4)> Processed { get; } = [];
-        public async Task ResizeAsync(string path, double ratio, bool convertDatToMp4 = false, CancellationToken cancellationToken = default)
+        public List<(string Path, bool ConvertToH264Mp4)> Processed { get; } = [];
+        public async Task ResizeAsync(string path, double ratio, bool convertToH264Mp4 = false, CancellationToken cancellationToken = default)
         {
             Assert.Equal(0.5, ratio);
-            lock (Processed) Processed.Add((path, convertDatToMp4));
-            string output = convertDatToMp4 && Path.GetExtension(path).Equals(".dat", StringComparison.OrdinalIgnoreCase)
+            lock (Processed) Processed.Add((path, convertToH264Mp4));
+            string output = convertToH264Mp4
                 ? Path.ChangeExtension(path, ".mp4") : path;
             await File.WriteAllBytesAsync(output, [0x50], cancellationToken);
             if (!output.Equals(path, StringComparison.OrdinalIgnoreCase)) File.Delete(path);

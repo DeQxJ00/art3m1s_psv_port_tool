@@ -175,7 +175,7 @@ public sealed class ConversionService : IConversionService
                     try
                     {
                         await _ffmpeg.ResizeAsync(path, options.Ratio,
-                            convertDatToMp4: extension.Equals(".dat", StringComparison.OrdinalIgnoreCase),
+                            convertToH264Mp4: archiveName is null && VideoExtensions.Contains(extension),
                             cancellationToken: token);
                     }
                     finally { videoSlots.Release(); }
