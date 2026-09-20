@@ -17,7 +17,7 @@ A PSV porting assistant for Artemis-engine games. It extracts each physical PFS 
 
 ## Downloads and platform support
 
-Releases provide NativeAOT single files for `win-x64` and `linux-x64`, plus unsigned and unnotarized `.app.zip` bundles for `osx-x64` and `osx-arm64`. macOS may require manual approval under Privacy & Security. FFmpeg/ffprobe 9.0.1 GPL Full executables are shipped in the release package's `tools` directory and are not embedded in the main application. The build includes x264, libtheora, libogg, and zlib, with no nonfree components. Development builds may use `ART3M1S_FFMPEG` and `ART3M1S_FFPROBE`.
+Releases provide NativeAOT single files for `win-x64` and `linux-x64`, plus unsigned and unnotarized `.app.zip` bundles for `osx-x64` and `osx-arm64`. macOS may require manual approval under Privacy & Security. FFmpeg/ffprobe GPL Full executables are shipped in the release package's `tools` directory and are not embedded in the main application: Windows/Linux use checksum-verified BtbN n9.0 static binaries, while macOS uses an equivalent FFmpeg 9.0.2 source build. Every package includes libdav1d, x264, and libtheora, with no nonfree components. Development builds may use `ART3M1S_FFMPEG` and `ART3M1S_FFPROBE`.
 
 ## Usage
 
@@ -45,7 +45,7 @@ Default parallelism is `max(1, logical CPU count - 1)`. OGV animation is always 
 
 ## PNG palette and transparency guarantees
 
-RGB24 stays RGB24 without Alpha; RGBA, grayscale, and transparent grayscale retain their color type. Indexed PNGs keep their original 1/2/4/8-bit depth. Original `PLTE` and `tRNS` chunks are written back byte-for-byte—the built-in palette is never edited, reordered, or reduced. Bicubic pixels are mapped back to the original palette and only pixel indices change. PNG coordinate text is scaled; every other PNG chunk is retained byte-for-byte apart from dimensions and image data.
+RGB24 stays RGB24 without Alpha; RGBA, grayscale, and transparent grayscale retain their color type. Gray8 PNG masks are forced to remain 8-bit grayscale (PNG color type 0) and are never converted to RGB, RGBA, or grayscale-alpha. Indexed PNGs keep their original 1/2/4/8-bit depth. Original `PLTE` and `tRNS` chunks are written back byte-for-byte—the built-in palette is never edited, reordered, or reduced. Bicubic pixels are mapped back to the original palette and only pixel indices change. PNG coordinate text is scaled; every other PNG chunk is retained byte-for-byte apart from dimensions and image data.
 
 ## Build, tests, and GitHub Actions
 
@@ -58,7 +58,7 @@ dotnet publish src/Art3m1s.PsvTool.App -c Release -r win-x64
 ./scripts/generate-screenshots.ps1
 ```
 
-`ci.yml` checks Release builds, tests, formatting, screenshot baselines, and multi-platform NativeAOT. `release.yml` builds four targets for `v*` tags or manual runs, then publishes checksums, SBOM, licenses, and FFmpeg build/source information.
+`ci.yml` checks Release builds, tests, formatting, screenshot baselines, and multi-platform NativeAOT. `release.yml` builds four targets for `v*` tags or manual runs, verifies and packages FFmpeg Full, then publishes checksums, SBOM, licenses, and FFmpeg build/source information.
 
 ## Known limitations
 
@@ -81,7 +81,9 @@ Thanks to the following open-source projects.
 | **SixLabors.ImageSharp** | Six Labors Split License 1.0 | PNG decoding and Bicubic resizing (3.1.12) | [SixLabors/ImageSharp](https://github.com/SixLabors/ImageSharp) |
 | **HarfBuzz** | Old MIT | CFF OpenType font subsetting (8.3.1) | [harfbuzz/harfbuzz](https://github.com/harfbuzz/harfbuzz) |
 | **Optris.StaticGraphics.Avalonia.Software** | MIT fork and upstream component licenses | Static Skia / HarfBuzz graphics backend for NativeAOT | [NuGet](https://www.nuget.org/packages/Optris.StaticGraphics.Avalonia.Software) |
-| **FFmpeg / ffprobe** | GPL-2.0-or-later Full build | Animation/video probing, resizing, and transcoding (9.0.1) | [FFmpeg 9.0.1 source](https://ffmpeg.org/releases/ffmpeg-9.0.1.tar.xz) |
+| **FFmpeg / ffprobe** | GPL Full build | Animation/video probing, resizing, and transcoding (n9.0 / 9.0.2) | [FFmpeg 9.0.2 source](https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz) |
+| **BtbN/FFmpeg-Builds** | GPL-3.0 | Windows/Linux FFmpeg Full static binaries and provider checksums | [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds) |
+| **dav1d** | BSD-2-Clause | Software AV1 decoding | [VideoLAN/dav1d](https://code.videolan.org/videolan/dav1d) |
 | **x264** | GPL-2.0 | H.264 encoding | [VideoLAN/x264](https://code.videolan.org/videolan/x264) |
 | **libtheora** | BSD-3-Clause | Theora encoding | [Xiph.Org/libtheora](https://github.com/xiph/theora) |
 | **libogg** | BSD-3-Clause | Ogg container | [Xiph.Org/libogg](https://github.com/xiph/ogg) |

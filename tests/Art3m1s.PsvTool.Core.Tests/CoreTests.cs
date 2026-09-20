@@ -109,6 +109,38 @@ public sealed class CoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Gray8MaskStaysEightBitGrayscaleWithoutAlpha()
+    {
+        string path = Path.Combine(_root, "mask-gray8.png");
+        using (Image<L8> image = new(12, 8))
+        {
+            image.ProcessPixelRows(accessor =>
+            {
+                for (int y = 0; y < accessor.Height; y++)
+                {
+                    Span<L8> row = accessor.GetRowSpan(y);
+                    for (int x = 0; x < row.Length; x++) row[x] = new L8(checked((byte)(x * 17 + y * 3)));
+                }
+            });
+            await image.SaveAsync(path, new PngEncoder
+            {
+                ColorType = PngColorType.Grayscale,
+                BitDepth = PngBitDepth.Bit8
+            });
+        }
+
+        await new PngProcessor().ResizeAsync(path, 0.5);
+
+        byte[] result = await File.ReadAllBytesAsync(path);
+        Assert.Equal(8, result[24]);
+        Assert.Equal(0, result[25]);
+        Assert.Equal(6u, BinaryPrimitives.ReadUInt32BigEndian(result.AsSpan(16, 4)));
+        Assert.Equal(4u, BinaryPrimitives.ReadUInt32BigEndian(result.AsSpan(20, 4)));
+        using Image<L8> decoded = await Image.LoadAsync<L8>(path);
+        Assert.Equal(new Size(6, 4), decoded.Size);
+    }
+
+    [Fact]
     public async Task ConversionKeepsSparseArchivesIndependentAndCopiesLooseFiles()
     {
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
@@ -359,6 +391,26 @@ public sealed class CoreTests : IDisposable
 
         Assert.False(File.Exists(source));
         Assert.Equal([4, 5, 6], await File.ReadAllBytesAsync(destination));
+    }
+
+    [Fact]
+    public async Task NewMp4FallsBackToCopyWhenScannerDeniesRename()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        string source = Path.Combine(_root, ".opening.transcoded.mp4");
+        string destination = Path.Combine(_root, "opening.mp4");
+        byte[] payload = Enumerable.Range(0, 4096).Select(value => (byte)value).ToArray();
+        await File.WriteAllBytesAsync(source, payload);
+
+        using FileStream scannerLock = new(source, FileMode.Open, FileAccess.Read, FileShare.Read);
+        Task move = FfmpegProcessor.MoveReplacingWithRetryAsync(
+            source, destination, overwrite: false, CancellationToken.None);
+        await Task.Delay(150);
+        scannerLock.Dispose();
+        await move;
+
+        Assert.False(File.Exists(source));
+        Assert.Equal(payload, await File.ReadAllBytesAsync(destination));
     }
 
     [Fact]

@@ -75,6 +75,11 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
                     arguments[arguments.IndexOf("-q:v") + 1] = "7";
                     await RunAsync(_ffmpeg, arguments, cancellationToken);
                 }
+                // Some libtheora/FFmpeg combinations can return success while writing
+                // malformed packets (for example, unpack_block_qpis failures that render as
+                // bright green macroblocks). Decode the complete temporary stream before it
+                // is allowed to replace the original animation.
+                await ValidateEncodedVideoAsync(temporary, cancellationToken);
                 await MoveReplacingWithRetryAsync(temporary, path, cancellationToken);
                 return;
             }
@@ -177,6 +182,22 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
         return new VideoProbe(codec, format, width, height, frameRate, pixelFormat);
     }
 
+    private async Task ValidateEncodedVideoAsync(string path, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await RunAsync(_ffmpeg,
+                ["-hide_banner", "-xerror", "-loglevel", "error", "-i", path,
+                 "-map", "0:v:0", "-f", "null", "-"],
+                cancellationToken);
+        }
+        catch (FfmpegProcessException exception)
+        {
+            throw new InvalidDataException(
+                $"Encoded video failed full decode validation and was not installed: {path}", exception);
+        }
+    }
+
     internal static (int Width, int Height) CalculateScaledDimensions(int width, int height, double ratio)
     {
         if (width <= 0) throw new ArgumentOutOfRangeException(nameof(width));
@@ -265,6 +286,14 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
                 File.Move(source, destination, overwrite);
                 return;
             }
+            catch (IOException) when (!overwrite && attempt == 0 && File.Exists(source) && !File.Exists(destination))
+            {
+                // Virus scanners commonly keep a completed MP4 open without delete sharing.
+                // A read is still allowed, so materialize the final file in the private
+                // staging directory, then wait for the hidden temporary to become deletable.
+                await CopyCompletedOutputAndDeleteSourceAsync(source, destination, cancellationToken);
+                return;
+            }
             catch (IOException) when (attempt < attempts - 1 && File.Exists(source))
             {
                 // On Windows, FFmpeg/virus scanners can retain a just-closed output handle
@@ -272,6 +301,56 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
                 // replacement instead of failing the whole PFS conversion.
                 await Task.Delay(Math.Min(100 * (attempt + 1), 1000), cancellationToken);
             }
+        }
+    }
+
+    private static async Task CopyCompletedOutputAndDeleteSourceAsync(
+        string source,
+        string destination,
+        CancellationToken cancellationToken)
+    {
+        bool destinationCreated = false;
+        try
+        {
+            await using (FileStream input = new(source, FileMode.Open, FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete, 1024 * 1024,
+                FileOptions.Asynchronous | FileOptions.SequentialScan))
+            await using (FileStream output = new(destination, FileMode.CreateNew, FileAccess.Write,
+                FileShare.None, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
+            {
+                destinationCreated = true;
+                await input.CopyToAsync(output, 1024 * 1024, cancellationToken);
+                await output.FlushAsync(cancellationToken);
+                if (output.Length != input.Length)
+                    throw new IOException("Completed FFmpeg output copy length mismatch.");
+            }
+
+            // The destination is now complete inside the private task directory. Keep
+            // retrying deletion because committing the directory while a child is locked
+            // would fail on Windows as well.
+            const int deleteAttempts = 180;
+            for (int attempt = 0; ; attempt++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    File.Delete(source);
+                    return;
+                }
+                catch (IOException) when (attempt < deleteAttempts - 1 && File.Exists(source))
+                {
+                    await Task.Delay(1000, cancellationToken);
+                }
+            }
+        }
+        catch
+        {
+            if (destinationCreated)
+            {
+                try { File.Delete(destination); }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
+            }
+            throw;
         }
     }
 

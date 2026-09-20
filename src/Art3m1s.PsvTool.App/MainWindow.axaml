@@ -106,7 +106,9 @@
             </StackPanel>
             <StackPanel Grid.Column="1" Spacing="8">
               <TextBlock Text="{Binding LogLabel}" Classes="sectionTitle" />
-              <TextBox Text="{Binding Log}" IsReadOnly="True" AcceptsReturn="True" Height="110" TextWrapping="NoWrap" FontFamily="Cascadia Mono, Consolas" />
+              <TextBox x:Name="LogTextBox" Text="{Binding Log}" TextChanged="LogTextChanged"
+                       IsReadOnly="True" AcceptsReturn="True" Height="110" TextWrapping="NoWrap"
+                       FontFamily="Cascadia Mono, Consolas" />
             </StackPanel>
           </Grid>
         </Border>

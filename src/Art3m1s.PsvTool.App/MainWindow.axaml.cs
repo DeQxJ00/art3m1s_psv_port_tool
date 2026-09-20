@@ -1,6 +1,8 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 namespace Art3m1s.PsvTool.App;
 
@@ -15,6 +17,19 @@ public sealed partial class MainWindow : Window
         ViewModel = viewModel;
         InitializeComponent();
         DataContext = ViewModel;
+    }
+
+    private static void LogTextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (sender is not TextBox textBox) return;
+        Dispatcher.UIThread.Post(() =>
+        {
+            textBox.CaretIndex = textBox.Text?.Length ?? 0;
+            textBox.GetVisualDescendants()
+                .OfType<ScrollViewer>()
+                .FirstOrDefault()
+                ?.ScrollToEnd();
+        }, DispatcherPriority.Background);
     }
 
     private async void BrowseInputClick(object? sender, RoutedEventArgs e)
@@ -64,7 +79,7 @@ public sealed partial class MainWindow : Window
                     Children =
                     {
                         new TextBlock { Text = $"{ViewModel.Title} v{appVersion}", FontSize = 22, FontWeight = Avalonia.Media.FontWeight.Bold },
-                        new TextBlock { Text = $".NET 10 · Avalonia {avalonia} · ImageSharp {imageSharp} · FFmpeg 9.0.1 GPL Full", TextWrapping = Avalonia.Media.TextWrapping.Wrap },
+                        new TextBlock { Text = $".NET 10 · Avalonia {avalonia} · ImageSharp {imageSharp} · FFmpeg n9.0 GPL Full", TextWrapping = Avalonia.Media.TextWrapping.Wrap },
                         new TextBlock { Text = ViewModel.AboutBody, TextWrapping = Avalonia.Media.TextWrapping.Wrap }
                     }
                 }
