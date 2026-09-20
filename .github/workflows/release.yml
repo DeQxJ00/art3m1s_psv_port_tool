@@ -52,7 +52,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ffmpeg-install
-          key: ffmpeg-${{ env.FFMPEG_VERSION }}-gpl-full-${{ matrix.rid }}-v5
+          key: ffmpeg-${{ env.FFMPEG_VERSION }}-gpl-full-${{ matrix.rid }}-v6
       - shell: pwsh
         run: |
           Invoke-WebRequest "https://ffmpeg.org/releases/ffmpeg-${env:FFMPEG_VERSION}.tar.xz" -OutFile ffmpeg.tar.xz
@@ -122,7 +122,9 @@ jobs:
           if (-not $ffmpeg) { throw 'BtbN archive does not contain ffmpeg.' }
           $bundleRoot = Split-Path (Split-Path $ffmpeg.FullName)
           New-Item -ItemType Directory -Force ffmpeg-install/bin | Out-Null
-          Copy-Item "$bundleRoot/bin/ffmpeg*" ffmpeg-install/bin
+          $suffix = if ([OperatingSystem]::IsWindows()) { '.exe' } else { '' }
+          Copy-Item "$bundleRoot/bin/ffmpeg$suffix" "ffmpeg-install/bin/ffmpeg$suffix"
+          Copy-Item "$bundleRoot/bin/ffprobe$suffix" "ffmpeg-install/bin/ffprobe$suffix"
           Copy-Item "$bundleRoot/LICENSE.txt" ffmpeg-install/BTBN-LICENSE.txt
           Copy-Item btbn-checksums.sha256 ffmpeg-install/BTBN-checksums.sha256
       - run: dotnet test art3m1s_psv_port_tool.slnx -c Release
