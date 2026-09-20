@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace Art3m1s.PsvTool.Core;
@@ -18,17 +19,26 @@ public sealed class FontSubsetProcessor : IFontSubsetProcessor
     public async Task<bool> SubsetAsync(string path, FontSubsetProfile profile, IReadOnlySet<int> usedCodePoints, CancellationToken cancellationToken = default)
     {
         byte[] font = await File.ReadAllBytesAsync(path, cancellationToken);
-        if (!SfntFont.TryParse(font, out SfntFont? parsed) || parsed is null || parsed.Tables.ContainsKey("CFF ") || parsed.Tables.ContainsKey("CFF2") || parsed.Tables.ContainsKey("fvar"))
-            return false;
-
         HashSet<int> codePoints = FontCharacterSets.Create(profile);
         codePoints.UnionWith(usedCodePoints);
-        HashSet<ushort> glyphs = [0];
-        foreach (int codePoint in codePoints)
-            if (parsed.TryMapCodePoint(codePoint, out ushort glyph)) glyphs.Add(glyph);
-        parsed.AddCompositeDependencies(glyphs);
+        byte[] subset;
+        if (font.AsSpan().StartsWith("OTTO"u8))
+        {
+            subset = HarfBuzzSubsetter.Subset(font, codePoints);
+        }
+        else
+        {
+            if (!SfntFont.TryParse(font, out SfntFont? parsed) || parsed is null ||
+                parsed.Tables.ContainsKey("CFF ") || parsed.Tables.ContainsKey("CFF2") || parsed.Tables.ContainsKey("fvar"))
+                return false;
 
-        byte[] subset = parsed.BuildWithGlyphs(glyphs);
+            HashSet<ushort> glyphs = [0];
+            foreach (int codePoint in codePoints)
+                if (parsed.TryMapCodePoint(codePoint, out ushort glyph)) glyphs.Add(glyph);
+            parsed.AddCompositeDependencies(glyphs);
+            subset = parsed.BuildWithGlyphs(glyphs);
+        }
+
         string temporary = path + ".subset-" + Guid.NewGuid().ToString("N");
         try
         {
@@ -40,6 +50,77 @@ public sealed class FontSubsetProcessor : IFontSubsetProcessor
         {
             if (File.Exists(temporary)) File.Delete(temporary);
         }
+    }
+}
+
+internal static class HarfBuzzSubsetter
+{
+    public static byte[] Subset(byte[] font, IReadOnlySet<int> codePoints)
+    {
+        IntPtr blob = IntPtr.Zero, face = IntPtr.Zero, input = IntPtr.Zero;
+        IntPtr subsetFace = IntPtr.Zero, subsetBlob = IntPtr.Zero;
+        GCHandle pinned = default;
+        try
+        {
+            pinned = GCHandle.Alloc(font, GCHandleType.Pinned);
+            blob = Native.BlobCreate(pinned.AddrOfPinnedObject(), checked((uint)font.Length), 0, IntPtr.Zero, IntPtr.Zero);
+            if (blob == IntPtr.Zero) throw new InvalidDataException("HarfBuzz could not read the OTF font.");
+            face = Native.FaceCreate(blob, 0);
+            input = Native.SubsetInputCreateOrFail();
+            if (face == IntPtr.Zero || input == IntPtr.Zero)
+                throw new InvalidDataException("HarfBuzz could not initialize OTF subsetting.");
+            IntPtr unicodeSet = Native.SubsetInputUnicodeSet(input);
+            if (unicodeSet == IntPtr.Zero) throw new InvalidDataException("HarfBuzz could not create the OTF Unicode set.");
+            foreach (int codePoint in codePoints)
+                if ((uint)codePoint <= 0x10ffff) Native.SetAdd(unicodeSet, (uint)codePoint);
+            subsetFace = Native.SubsetOrFail(face, input);
+            if (subsetFace == IntPtr.Zero) throw new InvalidDataException("HarfBuzz could not subset the CFF OTF font.");
+            subsetBlob = Native.FaceReferenceBlob(subsetFace);
+            if (subsetBlob == IntPtr.Zero) throw new InvalidDataException("HarfBuzz returned no OTF font data.");
+            IntPtr data = Native.BlobGetData(subsetBlob, out uint length);
+            if (data == IntPtr.Zero || length == 0 || length > int.MaxValue)
+                throw new InvalidDataException("HarfBuzz returned invalid OTF font data.");
+            byte[] result = GC.AllocateUninitializedArray<byte>((int)length);
+            Marshal.Copy(data, result, 0, result.Length);
+            return result;
+        }
+        finally
+        {
+            if (subsetBlob != IntPtr.Zero) Native.BlobDestroy(subsetBlob);
+            if (subsetFace != IntPtr.Zero) Native.FaceDestroy(subsetFace);
+            if (input != IntPtr.Zero) Native.SubsetInputDestroy(input);
+            if (face != IntPtr.Zero) Native.FaceDestroy(face);
+            if (blob != IntPtr.Zero) Native.BlobDestroy(blob);
+            if (pinned.IsAllocated) pinned.Free();
+        }
+    }
+
+    private static class Native
+    {
+        private const string Library = "libHarfBuzzSharp";
+
+        [DllImport(Library, EntryPoint = "hb_blob_create", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr BlobCreate(IntPtr data, uint length, int mode, IntPtr userData, IntPtr destroy);
+        [DllImport(Library, EntryPoint = "hb_blob_destroy", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void BlobDestroy(IntPtr blob);
+        [DllImport(Library, EntryPoint = "hb_blob_get_data", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr BlobGetData(IntPtr blob, out uint length);
+        [DllImport(Library, EntryPoint = "hb_face_create", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr FaceCreate(IntPtr blob, uint index);
+        [DllImport(Library, EntryPoint = "hb_face_destroy", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void FaceDestroy(IntPtr face);
+        [DllImport(Library, EntryPoint = "hb_face_reference_blob", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr FaceReferenceBlob(IntPtr face);
+        [DllImport(Library, EntryPoint = "hb_subset_input_create_or_fail", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr SubsetInputCreateOrFail();
+        [DllImport(Library, EntryPoint = "hb_subset_input_destroy", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void SubsetInputDestroy(IntPtr input);
+        [DllImport(Library, EntryPoint = "hb_subset_input_unicode_set", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr SubsetInputUnicodeSet(IntPtr input);
+        [DllImport(Library, EntryPoint = "hb_set_add", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void SetAdd(IntPtr set, uint codePoint);
+        [DllImport(Library, EntryPoint = "hb_subset_or_fail", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr SubsetOrFail(IntPtr face, IntPtr input);
     }
 }
 

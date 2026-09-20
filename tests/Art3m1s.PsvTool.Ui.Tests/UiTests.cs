@@ -14,8 +14,15 @@ public sealed class UiTests
     public void ChineseIsTheFirstLaunchDefault()
     {
         Localizer localizer = new();
+        MainViewModel viewModel = new(localizer, settings: new MemorySettingsStore());
         Assert.Equal("zh-CN", localizer.Language);
         Assert.Equal("图片（PNG）", localizer["Images"]);
+        Assert.Equal("字体削减（TTF / OTF）", viewModel.FontSubsetLabel);
+        Assert.Equal("动画（OGV / E-mote PSB）", viewModel.AnimationLabel);
+        Assert.Contains("art3m1s-core", viewModel.AboutBody);
+        Assert.True(viewModel.IgnorePfsVideos);
+        Assert.Contains("WMV / DAT / MP4 / AVI / MPG / MKV", viewModel.IgnorePfsVideosLabel);
+        Assert.DoesNotContain("OGV", viewModel.IgnorePfsVideosLabel);
     }
 
     [Fact]
@@ -24,6 +31,9 @@ public sealed class UiTests
         Localizer localizer = new(); MainViewModel viewModel = new(localizer, settings: new MemorySettingsStore());
         localizer.SetLanguage("en-US");
         Assert.Equal("Video (WMV / DAT / MP4 / AVI / MPG / MKV)", viewModel.VideoLabel);
+        Assert.Equal("Font subsetting (TTF / OTF)", viewModel.FontSubsetLabel);
+        Assert.Equal("Animation (OGV / E-mote PSB)", viewModel.AnimationLabel);
+        Assert.Equal("Ignore video inside PFS (WMV / DAT / MP4 / AVI / MPG / MKV)", viewModel.IgnorePfsVideosLabel);
         Assert.Equal("art3m1s PSV Port Tool", viewModel.Title);
     }
 

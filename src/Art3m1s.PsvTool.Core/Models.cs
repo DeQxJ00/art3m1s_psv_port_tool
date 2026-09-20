@@ -34,7 +34,8 @@ public sealed record ConversionOptions(
     PfsNameEncoding NameEncoding = PfsNameEncoding.Auto,
     bool OverwriteExisting = false,
     bool SubsetFonts = false,
-    FontSubsetProfile FontProfile = FontSubsetProfile.SimplifiedChinese)
+    FontSubsetProfile FontProfile = FontSubsetProfile.SimplifiedChinese,
+    bool IgnorePfsVideos = true)
 {
     public int EffectiveParallelism => MaxParallelism > 0
         ? MaxParallelism

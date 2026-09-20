@@ -26,6 +26,7 @@ public sealed class ConversionService : IConversionService
     private readonly IVitaIniProcessor _vita;
     private readonly IFfmpegProcessor _ffmpeg;
     private readonly IFontSubsetProcessor _fonts;
+    private readonly IPsbProcessor _psb;
 
     public ConversionService(
         IProjectScanner? scanner = null,
@@ -34,7 +35,8 @@ public sealed class ConversionService : IConversionService
         ITextProcessor? text = null,
         IVitaIniProcessor? vita = null,
         IFfmpegProcessor? ffmpeg = null,
-        IFontSubsetProcessor? fonts = null)
+        IFontSubsetProcessor? fonts = null,
+        IPsbProcessor? psb = null)
     {
         _scanner = scanner ?? new ProjectScanner();
         _pfs = pfs ?? new PfsCodec();
@@ -43,6 +45,7 @@ public sealed class ConversionService : IConversionService
         _vita = vita ?? new VitaIniProcessor();
         _ffmpeg = ffmpeg ?? new FfmpegProcessor();
         _fonts = fonts ?? new FontSubsetProcessor();
+        _psb = psb ?? new PsbProcessor();
     }
 
     public async Task ConvertAsync(
@@ -63,6 +66,7 @@ public sealed class ConversionService : IConversionService
         string staging = Path.Combine(parent, $".{Path.GetFileName(outputFull)}.art3m1s-{Guid.NewGuid():N}");
         string backup = Path.Combine(parent, $".{Path.GetFileName(outputFull)}.backup-{Guid.NewGuid():N}");
         Directory.CreateDirectory(staging);
+        bool committed = false;
 
         try
         {
@@ -82,12 +86,13 @@ public sealed class ConversionService : IConversionService
             await ProcessTreeAsync(staging, options, progress, cancellationToken, archiveName: null, skipPfs: true, preserveDat: false,
                 progressStart: 100d * scan.Archives.Count / total, progressSpan: 100d / total);
             CommitDirectory(staging, outputFull, backup, options.OverwriteExisting);
+            committed = true;
             progress?.Report(new ConversionProgress(100, "complete"));
         }
         finally
         {
-            SafeDeleteTaskDirectory(staging, parent);
-            SafeDeleteTaskDirectory(backup, parent);
+            SafeDeleteTaskDirectory(staging, parent, suppressIoErrors: !committed);
+            SafeDeleteTaskDirectory(backup, parent, suppressIoErrors: !committed);
         }
     }
 
@@ -103,6 +108,7 @@ public sealed class ConversionService : IConversionService
         string workParent = Path.Combine(staging, ".art3m1s-work");
         string work = Path.Combine(workParent, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(work);
+        bool completed = false;
         try
         {
             ExtractedArchive extracted = await _pfs.ExtractAsync(archive.Path, work, options.NameEncoding, cancellationToken);
@@ -114,6 +120,7 @@ public sealed class ConversionService : IConversionService
             progress?.Report(new ConversionProgress(100d * (archiveIndex + 0.9) / totalUnits, "pack", archive.FileName));
             await _pfs.PackPf8Async(extracted, temporary, cancellationToken);
             File.Move(temporary, destination, true);
+            completed = true;
         }
         catch (OperationCanceledException) { throw; }
         catch (ConversionItemException) { throw; }
@@ -123,9 +130,13 @@ public sealed class ConversionService : IConversionService
         }
         finally
         {
-            SafeDeleteTaskDirectory(work, workParent);
-            if (Directory.Exists(workParent) && !Directory.EnumerateFileSystemEntries(workParent).Any())
-                Directory.Delete(workParent);
+            SafeDeleteTaskDirectory(work, workParent, suppressIoErrors: !completed);
+            try
+            {
+                if (Directory.Exists(workParent) && !Directory.EnumerateFileSystemEntries(workParent).Any())
+                    Directory.Delete(workParent);
+            }
+            catch (Exception exception) when (!completed && exception is IOException or UnauthorizedAccessException) { }
         }
     }
 
@@ -145,6 +156,8 @@ public sealed class ConversionService : IConversionService
             .ToArray();
         IReadOnlySet<int> usedCodePoints = options.SubsetFonts ? await CollectUsedCodePointsAsync(files, cancellationToken) : new HashSet<int>();
         using SemaphoreSlim videoSlots = new(2);
+        using SemaphoreSlim animationSlots = new(1);
+        using SemaphoreSlim psbSlots = new(1);
         int completed = 0;
         await Parallel.ForEachAsync(files, new ParallelOptions
         {
@@ -160,8 +173,22 @@ public sealed class ConversionService : IConversionService
                     await _text.ProcessAsync(path, options.Ratio, token);
                 else if (extension.Equals(".png", StringComparison.OrdinalIgnoreCase) && options.Categories.HasFlag(AssetCategories.Images))
                     await _png.ResizeAsync(path, options.Ratio, token);
-                else if (options.SubsetFonts && extension.Equals(".ttf", StringComparison.OrdinalIgnoreCase))
+                else if (options.SubsetFonts && (extension.Equals(".ttf", StringComparison.OrdinalIgnoreCase) ||
+                                                 extension.Equals(".otf", StringComparison.OrdinalIgnoreCase)))
                     await _fonts.SubsetAsync(path, options.FontProfile, usedCodePoints, token);
+                else if (extension.Equals(".psb", StringComparison.OrdinalIgnoreCase) &&
+                         options.Categories.HasFlag(AssetCategories.Animation))
+                {
+                    await psbSlots.WaitAsync(token);
+                    try { await _psb.ResizeAsync(path, options.Ratio, token); }
+                    finally { psbSlots.Release(); }
+                }
+                else if (archiveName is not null && options.IgnorePfsVideos && VideoExtensions.Contains(extension))
+                {
+                    // Some Artemis titles store a second, engine-protected video stream inside
+                    // PFS entries. The default is deliberately byte-preserving so FFmpeg never
+                    // mistakes those files for ordinary media.
+                }
                 else if (preserveDat && extension.Equals(".dat", StringComparison.OrdinalIgnoreCase))
                 {
                     // DAT files inside PFS archives can be arbitrary game data (for example
@@ -171,14 +198,15 @@ public sealed class ConversionService : IConversionService
                 else if ((AnimationExtensions.Contains(extension) && options.Categories.HasFlag(AssetCategories.Animation)) ||
                          (VideoExtensions.Contains(extension) && options.Categories.HasFlag(AssetCategories.Video)))
                 {
-                    await videoSlots.WaitAsync(token);
+                    SemaphoreSlim slots = AnimationExtensions.Contains(extension) ? animationSlots : videoSlots;
+                    await slots.WaitAsync(token);
                     try
                     {
                         await _ffmpeg.ResizeAsync(path, options.Ratio,
                             convertToH264Mp4: archiveName is null && VideoExtensions.Contains(extension),
                             cancellationToken: token);
                     }
-                    finally { videoSlots.Release(); }
+                    finally { slots.Release(); }
                 }
 
                 if (Path.GetFileName(path).Equals("system.ini", StringComparison.OrdinalIgnoreCase))
@@ -262,13 +290,14 @@ public sealed class ConversionService : IConversionService
         return suffix.Length == 0 || (suffix.Length == 4 && suffix[0] == '.' && suffix[1..].All(char.IsAsciiDigit));
     }
 
-    private static void SafeDeleteTaskDirectory(string path, string expectedParent)
+    private static void SafeDeleteTaskDirectory(string path, string expectedParent, bool suppressIoErrors = false)
     {
         if (!Directory.Exists(path)) return;
         string parent = Path.GetFullPath(expectedParent).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
         string target = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
         if (!target.StartsWith(parent, StringComparison.OrdinalIgnoreCase) || !Path.GetFileName(path).Contains("art3m1s", StringComparison.OrdinalIgnoreCase) && !Path.GetFileName(expectedParent).Equals(".art3m1s-work", StringComparison.Ordinal))
             throw new InvalidOperationException("Refusing to remove an unexpected temporary directory.");
-        Directory.Delete(path, true);
+        try { Directory.Delete(path, true); }
+        catch (Exception exception) when (suppressIoErrors && exception is IOException or UnauthorizedAccessException) { }
     }
 }

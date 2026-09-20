@@ -44,9 +44,46 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
 
         string outputCodec = probe.Codec.Equals("wmv3", StringComparison.OrdinalIgnoreCase) ? "wmv2" : probe.Codec;
         string quality = outputCodec.Equals("theora", StringComparison.OrdinalIgnoreCase) ? "8" : "2";
+        string workerThreads = outputCodec.Equals("theora", StringComparison.OrdinalIgnoreCase)
+            ? "1"
+            : Environment.ProcessorCount.ToString(CultureInfo.InvariantCulture);
         string temporary = Path.Combine(Path.GetDirectoryName(path)!, $".{Path.GetFileNameWithoutExtension(path)}.{Guid.NewGuid():N}{extension}");
         (int targetWidth, int targetHeight) = CalculateScaledDimensions(probe.Width, probe.Height, ratio);
         string filter = FormattableString.Invariant($"scale={targetWidth}:{targetHeight}:flags=bicubic");
+        if (outputCodec.Equals("theora", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                // Feeding an intermediate RGB PNG sequence back to libtheora fails on some
+                // valid Artemis animations (theora_encode_packetout). A direct, single-thread
+                // Bicubic pass keeps the same Theora codec, frame rate, chroma format, and
+                // audio while avoiding that encoder defect and the large frame cache.
+                List<string> arguments = ["-hide_banner", "-loglevel", "error", "-y", "-i", path,
+                    "-map", "0:v:0", "-map", "0:a:0?", "-vf", filter,
+                    "-c:v", "theora", "-pix_fmt", NormalizeTheoraPixelFormat(probe.PixelFormat),
+                    "-r", probe.FrameRate, "-q:v", quality, "-threads", "1", "-c:a", "copy", temporary];
+                try
+                {
+                    await RunAsync(_ffmpeg, arguments, cancellationToken);
+                }
+                catch (FfmpegProcessException exception) when (
+                    exception.Message.Contains("theora_encode_packetout", StringComparison.OrdinalIgnoreCase))
+                {
+                    // libtheora can reject unusually complex frames at q=8. Match the
+                    // reference quality first, then use its next compatible quality step as a
+                    // compatibility fallback rather than aborting the complete PFS archive.
+                    arguments[arguments.IndexOf("-q:v") + 1] = "7";
+                    await RunAsync(_ffmpeg, arguments, cancellationToken);
+                }
+                await MoveReplacingWithRetryAsync(temporary, path, cancellationToken);
+                return;
+            }
+            finally
+            {
+                TryDeleteTemporaryFile(temporary);
+            }
+        }
+
         string frameDirectory = Path.Combine(Path.GetTempPath(), "art3m1s-video-" + Guid.NewGuid().ToString("N"));
         string framePattern = Path.Combine(frameDirectory, "frame_%08d.png");
         Directory.CreateDirectory(frameDirectory);
@@ -58,7 +95,7 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
             await RunAsync(_ffmpeg,
                 ["-hide_banner", "-loglevel", "error", "-y", "-i", path, "-map", "0:v:0",
                  "-vf", filter, "-qscale:v", "1", "-qmin", "1", "-qmax", "1",
-                 "-fps_mode", "passthrough", "-threads", Environment.ProcessorCount.ToString(CultureInfo.InvariantCulture), framePattern],
+                 "-fps_mode", "passthrough", "-threads", workerThreads, framePattern],
                 cancellationToken);
             if (!Directory.EnumerateFiles(frameDirectory, "*.png", SearchOption.TopDirectoryOnly).Any())
                 throw new InvalidDataException($"No video frames were decoded from {path}.");
@@ -67,18 +104,18 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
                 "-r", probe.FrameRate, "-i", framePattern, "-i", path,
                 "-map", "0:v:0", "-map", "1:a:0?", "-c:a", "copy",
                 "-c:v", outputCodec, "-r", probe.FrameRate, "-q:v", quality,
-                "-threads", Environment.ProcessorCount.ToString(CultureInfo.InvariantCulture)];
+                "-threads", workerThreads];
             if (extension.Equals(".dat", StringComparison.OrdinalIgnoreCase))
             {
                 arguments.Add("-f"); arguments.Add(NormalizeMuxer(probe.Format));
             }
             arguments.Add(temporary);
             await RunAsync(_ffmpeg, arguments, cancellationToken);
-            File.Move(temporary, path, true);
+            await MoveReplacingWithRetryAsync(temporary, path, cancellationToken);
         }
         finally
         {
-            if (File.Exists(temporary)) File.Delete(temporary);
+            TryDeleteTemporaryFile(temporary);
             if (Directory.Exists(frameDirectory)) Directory.Delete(frameDirectory, true);
         }
     }
@@ -108,19 +145,19 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
                  "-c:v", "libx264", "-profile:v", "main", "-level:v", "3.1", "-pix_fmt", "yuv420p",
                  "-crf", "23", "-c:a", "aac", "-b:a", "128k", "-ar", "48000",
                  "-movflags", "+faststart", temporary], cancellationToken);
-            File.Move(temporary, destination, replacesSource);
+            await MoveReplacingWithRetryAsync(temporary, destination, replacesSource, cancellationToken);
             if (!replacesSource) File.Delete(path);
         }
         finally
         {
-            if (File.Exists(temporary)) File.Delete(temporary);
+            TryDeleteTemporaryFile(temporary);
         }
     }
 
     private async Task<VideoProbe> ProbeAsync(string path, CancellationToken cancellationToken)
     {
         string json = await RunAsync(_ffprobe,
-            ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name,width,height,avg_frame_rate,r_frame_rate:format=format_name", "-of", "json", path],
+            ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name,width,height,pix_fmt,avg_frame_rate,r_frame_rate:format=format_name", "-of", "json", path],
             cancellationToken);
         using JsonDocument document = JsonDocument.Parse(json);
         JsonElement streams = document.RootElement.GetProperty("streams");
@@ -133,9 +170,11 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
         if (width <= 0 || height <= 0)
             throw new InvalidDataException($"Video dimensions are invalid in {path}.");
         string frameRate = ReadFrameRate(streams[0]);
+        string pixelFormat = streams[0].TryGetProperty("pix_fmt", out JsonElement pixelFormatElement)
+            ? pixelFormatElement.GetString() ?? string.Empty : string.Empty;
         string format = document.RootElement.TryGetProperty("format", out JsonElement formatElement) && formatElement.TryGetProperty("format_name", out JsonElement nameElement)
             ? nameElement.GetString() ?? string.Empty : string.Empty;
-        return new VideoProbe(codec, format, width, height, frameRate);
+        return new VideoProbe(codec, format, width, height, frameRate, pixelFormat);
     }
 
     internal static (int Width, int Height) CalculateScaledDimensions(int width, int height, double ratio)
@@ -175,6 +214,15 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
         return primary switch { "mov" => "mp4", "matroska" => "matroska", "mpegvideo" => "mpeg", _ => primary };
     }
 
+    internal static string NormalizeTheoraPixelFormat(string pixelFormat) =>
+        pixelFormat.ToLowerInvariant() switch
+        {
+            "yuv420p" => "yuv420p",
+            "yuv422p" => "yuv422p",
+            "yuv444p" => "yuv444p",
+            _ => "yuv420p"
+        };
+
     private static async Task<string> RunAsync(string executable, IReadOnlyList<string> arguments, CancellationToken cancellationToken)
     {
         ProcessStartInfo start = new(executable)
@@ -196,6 +244,43 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
         return output;
     }
 
+    internal static Task MoveReplacingWithRetryAsync(
+        string source,
+        string destination,
+        CancellationToken cancellationToken) =>
+        MoveReplacingWithRetryAsync(source, destination, overwrite: true, cancellationToken);
+
+    internal static async Task MoveReplacingWithRetryAsync(
+        string source,
+        string destination,
+        bool overwrite,
+        CancellationToken cancellationToken)
+    {
+        const int attempts = 30;
+        for (int attempt = 0; ; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                File.Move(source, destination, overwrite);
+                return;
+            }
+            catch (IOException) when (attempt < attempts - 1 && File.Exists(source))
+            {
+                // On Windows, FFmpeg/virus scanners can retain a just-closed output handle
+                // for a short time. Keep the unique completed output and retry its atomic
+                // replacement instead of failing the whole PFS conversion.
+                await Task.Delay(Math.Min(100 * (attempt + 1), 1000), cancellationToken);
+            }
+        }
+    }
+
+    private static void TryDeleteTemporaryFile(string path)
+    {
+        try { if (File.Exists(path)) File.Delete(path); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
+    }
+
     private static string FindTool(string name)
     {
         string executable = OperatingSystem.IsWindows() ? name + ".exe" : name;
@@ -208,7 +293,7 @@ public sealed class FfmpegProcessor : IFfmpegProcessor
         return executable;
     }
 
-    private sealed record VideoProbe(string Codec, string Format, int Width, int Height, string FrameRate);
+    private sealed record VideoProbe(string Codec, string Format, int Width, int Height, string FrameRate, string PixelFormat);
 
     private sealed class FfmpegProcessException(string message) : InvalidOperationException(message);
 }

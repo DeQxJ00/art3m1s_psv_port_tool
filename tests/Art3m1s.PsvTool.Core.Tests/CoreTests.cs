@@ -215,6 +215,15 @@ public sealed class CoreTests : IDisposable
             FfmpegProcessor.CalculateScaledDimensions(width, height, ratio));
     }
 
+    [Theory]
+    [InlineData("yuv420p", "yuv420p")]
+    [InlineData("yuv422p", "yuv422p")]
+    [InlineData("yuv444p", "yuv444p")]
+    [InlineData("", "yuv420p")]
+    [InlineData("rgb24", "yuv420p")]
+    public void TheoraPixelFormatIsPreservedWhenSupported(string input, string expected) =>
+        Assert.Equal(expected, FfmpegProcessor.NormalizeTheoraPixelFormat(input));
+
     [Fact]
     public async Task DatInsidePfsIsPreservedWithOriginalNameAndBytes()
     {
@@ -242,6 +251,82 @@ public sealed class CoreTests : IDisposable
     }
 
     [Fact]
+    public async Task PfsVideosAreIgnoredByDefaultWhileLooseVideosAreStillConverted()
+    {
+        string input = Path.Combine(_root, "pfs-video-game");
+        string output = Path.Combine(_root, "pfs-video-game-psv");
+        Directory.CreateDirectory(input);
+        string payload = Path.Combine(_root, "protected-video.bin");
+        byte[] original = [0xee, 0x8d, 0xdd, 0x05];
+        await File.WriteAllBytesAsync(payload, original);
+        string[] extensions = [".wmv", ".dat", ".mp4", ".avi", ".mpg", ".mkv"];
+        ExtractedArchive source = new('8', extensions.Select(extension =>
+            new PfsEntry(Encoding.UTF8.GetBytes($"movie/mb/opening{extension}"),
+                $"movie/mb/opening{extension}", 0, (uint)original.Length, payload)).ToArray());
+        PfsCodec codec = new();
+        await codec.PackPf8Async(source, Path.Combine(input, "root.pfs"));
+        await File.WriteAllBytesAsync(Path.Combine(input, "loose.mp4"), [1, 2, 3]);
+
+        RecordingFfmpegProcessor ffmpeg = new();
+        await new ConversionService(ffmpeg: ffmpeg).ConvertAsync(new ConversionOptions(input, output,
+            Ratio: 0.5, Categories: AssetCategories.Animation | AssetCategories.Video));
+
+        Assert.Single(ffmpeg.Processed);
+        Assert.EndsWith("loose.mp4", ffmpeg.Processed[0].Path, StringComparison.OrdinalIgnoreCase);
+        ExtractedArchive rebuilt = await codec.ExtractAsync(Path.Combine(output, "root.pfs"),
+            Path.Combine(_root, "pfs-video-verify"));
+        Assert.Equal(extensions.Length, rebuilt.Entries.Count);
+        foreach (PfsEntry entry in rebuilt.Entries)
+            Assert.Equal(original, await File.ReadAllBytesAsync(entry.ExtractedPath));
+    }
+
+    [Fact]
+    public async Task OggVideoInsidePfsIsStillProcessedAsAnimation()
+    {
+        string input = Path.Combine(_root, "pfs-ogv-game");
+        string output = Path.Combine(_root, "pfs-ogv-game-psv");
+        Directory.CreateDirectory(input);
+        string ogv = Path.Combine(_root, "opening.ogv");
+        await File.WriteAllBytesAsync(ogv, [1, 2, 3]);
+        ExtractedArchive source = new('8',
+        [
+            new PfsEntry(Encoding.UTF8.GetBytes("movie/opening.ogv"), "movie/opening.ogv", 0, 3, ogv)
+        ]);
+        PfsCodec codec = new();
+        await codec.PackPf8Async(source, Path.Combine(input, "root.pfs"));
+
+        RecordingFfmpegProcessor ffmpeg = new();
+        await new ConversionService(ffmpeg: ffmpeg).ConvertAsync(new ConversionOptions(input, output,
+            Ratio: 0.5, Categories: AssetCategories.Animation));
+
+        Assert.Single(ffmpeg.Processed);
+        Assert.EndsWith("opening.ogv", ffmpeg.Processed[0].Path, StringComparison.OrdinalIgnoreCase);
+        Assert.False(ffmpeg.Processed[0].ConvertToH264Mp4);
+    }
+
+    [Fact]
+    public async Task OgvAnimationsRunOneAtATime()
+    {
+        string input = Path.Combine(_root, "ogv-serial-game");
+        string output = Path.Combine(_root, "ogv-serial-game-psv");
+        Directory.CreateDirectory(input);
+        string payload = Path.Combine(_root, "required-for-ogv.bin");
+        await File.WriteAllBytesAsync(payload, [1]);
+        await new PfsCodec().PackPf8Async(new ExtractedArchive('8',
+            [new PfsEntry(Encoding.UTF8.GetBytes("required.bin"), "required.bin", 0, 1, payload)]),
+            Path.Combine(input, "root.pfs"));
+        foreach (string name in new[] { "a.ogv", "b.ogv", "c.ogv" })
+            await File.WriteAllBytesAsync(Path.Combine(input, name), [1, 2, 3]);
+        ConcurrencyRecordingFfmpegProcessor ffmpeg = new();
+
+        await new ConversionService(ffmpeg: ffmpeg).ConvertAsync(new ConversionOptions(input, output,
+            Ratio: 0.5, Categories: AssetCategories.Animation, MaxParallelism: 8));
+
+        Assert.Equal(3, ffmpeg.Processed);
+        Assert.Equal(1, ffmpeg.MaxConcurrent);
+    }
+
+    [Fact]
     public async Task NonVideoDatIsKeptByteForByteWhenProbeRejectsIt()
     {
         string dat = Path.Combine(_root, "index.dat");
@@ -253,6 +338,27 @@ public sealed class CoreTests : IDisposable
 
         Assert.Equal(original, await File.ReadAllBytesAsync(dat));
         Assert.False(File.Exists(Path.ChangeExtension(dat, ".mp4")));
+    }
+
+    [Fact]
+    public async Task CompletedFfmpegOutputIsRetriedWhenWindowsTemporarilyLocksIt()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        string source = Path.Combine(_root, ".opening.transcoded.ogv");
+        string destination = Path.Combine(_root, "opening.ogv");
+        await File.WriteAllBytesAsync(source, [4, 5, 6]);
+        await File.WriteAllBytesAsync(destination, [1, 2, 3]);
+
+        using FileStream temporaryLock = new(source, FileMode.Open, FileAccess.Read, FileShare.None);
+        Task move = FfmpegProcessor.MoveReplacingWithRetryAsync(source, destination, CancellationToken.None);
+        // Hold the file longer than the previous retry window to cover antivirus/indexer
+        // locks observed after real FFmpeg Theora output on Windows.
+        await Task.Delay(2500);
+        temporaryLock.Dispose();
+        await move;
+
+        Assert.False(File.Exists(source));
+        Assert.Equal([4, 5, 6], await File.ReadAllBytesAsync(destination));
     }
 
     [Fact]
@@ -276,6 +382,59 @@ public sealed class CoreTests : IDisposable
     }
 
     [Fact]
+    public async Task ArtemisTextRulesScaleEmoteGeometryWithoutChangingBehaviorValues()
+    {
+        string table = Path.Combine(_root, "emote.tbl");
+        await File.WriteAllTextAsync(table,
+            "init = {\r\n"
+            + "\tgame_scale = { 1280, 720, },\r\n"
+            + "\tsystem = {\r\n\t\tgame_width = 1280,\r\n\t\tgame_height = 720,\r\n\t},\r\n"
+            + "\temote = {\r\n"
+            + "\t\tbase = { [\"かずは\"] = { \"kaz\", 1, 1, }, },\r\n"
+            + "\t\tkaz = {\r\n"
+            + "\t\t\tfa = { 0.33, -380, 95, 1920, 2048, },\r\n"
+            + "\t\t\tno = { 0.59, -292, -125, 1920, 2048, },\r\n"
+            + "\t\t},\r\n\t},\r\n"
+            + "\temote_autoexec = \"待機\",\r\n}\r\n"
+            + "unrelated = { 1, -10, 20, 30, 40, }\r\n",
+            new UTF8Encoding(false));
+
+        await new ArtemisTextProcessor().ProcessAsync(table, 0.75);
+
+        string output = await File.ReadAllTextAsync(table);
+        Assert.Contains("\tgame_scale = { 960, 540, },", output, StringComparison.Ordinal);
+        Assert.Contains("\t\tgame_width = 960,", output, StringComparison.Ordinal);
+        Assert.Contains("\t\tgame_height = 540,", output, StringComparison.Ordinal);
+        Assert.Contains("fa = { 0.33, -285, 71, 1440, 1536, },", output, StringComparison.Ordinal);
+        Assert.Contains("no = { 0.59, -219, -93, 1440, 1536, },", output, StringComparison.Ordinal);
+        Assert.Contains("[\"かずは\"] = { \"kaz\", 1, 1, },", output, StringComparison.Ordinal);
+        Assert.Contains("emote_autoexec = \"待機\"", output, StringComparison.Ordinal);
+        Assert.Contains("unrelated = { 1, -10, 20, 30, 40, }", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ArtemisTextRulesScaleLiteralMulposGeometry()
+    {
+        string lua = Path.Combine(_root, "e-mote.lua");
+        await File.WriteAllTextAsync(lua,
+            "local y = mulpos(80)\r\n"
+            + "local x = mulpos(-40)\r\n"
+            + "local dynamic = mulpos(v[2])\r\n"
+            + "lyc2{ width=\"16\", height=\"4\" }\r\n"
+            + "em:setScale(0.33, 0, 0)\r\n",
+            new UTF8Encoding(false));
+
+        await new ArtemisTextProcessor().ProcessAsync(lua, 0.75);
+
+        string output = await File.ReadAllTextAsync(lua);
+        Assert.Contains("local y = mulpos(60)", output, StringComparison.Ordinal);
+        Assert.Contains("local x = mulpos(-30)", output, StringComparison.Ordinal);
+        Assert.Contains("local dynamic = mulpos(v[2])", output, StringComparison.Ordinal);
+        Assert.Contains("lyc2{ width=\"12\", height=\"3\" }", output, StringComparison.Ordinal);
+        Assert.Contains("em:setScale(0.33, 0, 0)", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task TrueTypeFontSubsettingProducesAValidSmallerSfntWhenAFontIsAvailable()
     {
         string? source = new[]
@@ -290,6 +449,126 @@ public sealed class CoreTests : IDisposable
         bool changed = await new FontSubsetProcessor().SubsetAsync(target, FontSubsetProfile.Japanese, new HashSet<int> { 'A', '日' });
         byte[] result = await File.ReadAllBytesAsync(target);
         Assert.True(changed); Assert.True(result.Length <= before); Assert.True(result.AsSpan(0, 4).SequenceEqual(new byte[] { 0, 1, 0, 0 }) || Encoding.ASCII.GetString(result, 0, 4) == "true");
+    }
+
+    [Fact]
+    public async Task CffOpenTypeSubsettingProducesAValidSmallerOtfWhenAFontIsAvailable()
+    {
+        string? source = new[]
+        {
+            @"C:\Windows\Fonts\SourceHanSansJP-Bold.otf",
+            @"C:\Windows\Fonts\A-OTF-FolkPro-Medium.otf",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.otf",
+            "/System/Library/Fonts/Supplemental/Arial Unicode.ttf"
+        }.FirstOrDefault(path => File.Exists(path) && File.ReadAllBytes(path).AsSpan().StartsWith("OTTO"u8));
+        if (source is null) return;
+        string target = Path.Combine(_root, "font.otf");
+        File.Copy(source, target);
+        long before = new FileInfo(target).Length;
+
+        bool changed = await new FontSubsetProcessor().SubsetAsync(target,
+            FontSubsetProfile.SimplifiedChinese, new HashSet<int> { 'A', '中' });
+
+        byte[] result = await File.ReadAllBytesAsync(target);
+        Assert.True(changed);
+        Assert.True(result.AsSpan().StartsWith("OTTO"u8));
+        Assert.True(result.Length < before);
+        Assert.True(HarfBuzzSubsetter.Subset(result, new HashSet<int> { 'A', '中' }).Length > 0);
+    }
+
+    [Fact]
+    public async Task ConversionDiscoversBothTtfAndOtfFonts()
+    {
+        string input = Path.Combine(_root, "font-discovery-game");
+        string output = Path.Combine(_root, "font-discovery-game-psv");
+        Directory.CreateDirectory(input);
+        string payload = Path.Combine(_root, "required-for-fonts.bin");
+        await File.WriteAllBytesAsync(payload, [1]);
+        await new PfsCodec().PackPf8Async(new ExtractedArchive('8',
+            [new PfsEntry(Encoding.UTF8.GetBytes("required.bin"), "required.bin", 0, 1, payload)]),
+            Path.Combine(input, "root.pfs"));
+        await File.WriteAllBytesAsync(Path.Combine(input, "body.ttf"), [1]);
+        await File.WriteAllBytesAsync(Path.Combine(input, "title.otf"), [2]);
+        RecordingFontSubsetProcessor fonts = new();
+
+        await new ConversionService(fonts: fonts).ConvertAsync(new ConversionOptions(input, output,
+            Categories: AssetCategories.None, SubsetFonts: true));
+
+        Assert.Equal(2, fonts.Paths.Count);
+        Assert.Contains(fonts.Paths, path => path.EndsWith("body.ttf", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(fonts.Paths, path => path.EndsWith("title.otf", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task PsbInspectorValidatesPlainEmoteResourceTables()
+    {
+        string path = Path.Combine(_root, "character.psb");
+        await File.WriteAllBytesAsync(path, CreateMinimalPsbV3());
+
+        PsbInspection result = await new PsbProcessor().InspectAsync(path);
+
+        Assert.Equal((ushort)3, result.Version);
+        Assert.Equal(0, result.ResourceCount);
+        Assert.Equal(0, result.ExtraResourceCount);
+        Assert.False(result.BodyEncrypted);
+    }
+
+    [Fact]
+    public async Task EmotePsbInsidePfsIsDispatchedToPsbProcessor()
+    {
+        string input = Path.Combine(_root, "psb-game");
+        string output = Path.Combine(_root, "psb-game-psv");
+        Directory.CreateDirectory(input);
+        byte[] original = CreateMinimalPsbV3();
+        string psb = Path.Combine(_root, "character.psb");
+        await File.WriteAllBytesAsync(psb, original);
+        PfsCodec codec = new();
+        await codec.PackPf8Async(new ExtractedArchive('8',
+        [
+            new PfsEntry(Encoding.UTF8.GetBytes("image/fg/character.psb"),
+                "image/fg/character.psb", 0, (uint)original.Length, psb)
+        ]), Path.Combine(input, "root.pfs"));
+
+        RecordingPsbProcessor psbProcessor = new();
+        await new ConversionService(psb: psbProcessor).ConvertAsync(new ConversionOptions(input, output,
+            Ratio: 0.5, Categories: AssetCategories.Animation));
+
+        Assert.Single(psbProcessor.Paths);
+        Assert.Equal(0.5, psbProcessor.Paths[0].Ratio);
+        ExtractedArchive rebuilt = await codec.ExtractAsync(Path.Combine(output, "root.pfs"),
+            Path.Combine(_root, "psb-verify"));
+        Assert.Equal(original, await File.ReadAllBytesAsync(Assert.Single(rebuilt.Entries).ExtractedPath));
+    }
+
+    private static byte[] CreateMinimalPsbV3()
+    {
+        byte[] result = new byte[57];
+        "PSB\0"u8.CopyTo(result);
+        BinaryPrimitives.WriteUInt16LittleEndian(result.AsSpan(4), 3);
+        BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(8), 44);
+        BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(12), 44); // names
+        BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(16), 47); // strings
+        BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(20), 56); // string data
+        BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(24), 50); // resource offsets
+        BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(28), 53); // resource lengths
+        BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(32), 56); // resource data
+        BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(36), 56); // root entry
+        uint checksum = Adler32ForTest(result.AsSpan(8, 32));
+        BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(40), checksum);
+        new byte[] { 0x0d, 0, 0x0c }.CopyTo(result, 44);
+        new byte[] { 0x0d, 0, 0x0c }.CopyTo(result, 47);
+        new byte[] { 0x0d, 0, 0x0c }.CopyTo(result, 50);
+        new byte[] { 0x0d, 0, 0x0c }.CopyTo(result, 53);
+        result[56] = 0x21;
+        return result;
+    }
+
+    private static uint Adler32ForTest(ReadOnlySpan<byte> bytes)
+    {
+        const uint modulus = 65_521;
+        uint a = 1, b = 0;
+        foreach (byte value in bytes) { a = (a + value) % modulus; b = (b + a) % modulus; }
+        return (b << 16) | a;
     }
 
     private static byte[] CreateIndexedPng(int width, int height, byte bitDepth, byte[] palette, byte[] transparency)
@@ -348,6 +627,51 @@ public sealed class CoreTests : IDisposable
                 ? Path.ChangeExtension(path, ".mp4") : path;
             await File.WriteAllBytesAsync(output, [0x50], cancellationToken);
             if (!output.Equals(path, StringComparison.OrdinalIgnoreCase)) File.Delete(path);
+        }
+    }
+
+    private sealed class RecordingPsbProcessor : IPsbProcessor
+    {
+        public List<(string Path, double Ratio)> Paths { get; } = [];
+        public Task<PsbInspection> InspectAsync(string path, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new PsbInspection(3, 0, 0, 0, false));
+        public Task ResizeAsync(string path, double ratio, CancellationToken cancellationToken = default)
+        {
+            Paths.Add((path, ratio));
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ConcurrencyRecordingFfmpegProcessor : IFfmpegProcessor
+    {
+        private int _concurrent;
+        public int Processed;
+        public int MaxConcurrent;
+
+        public async Task ResizeAsync(string path, double ratio, bool convertToH264Mp4 = false,
+            CancellationToken cancellationToken = default)
+        {
+            int current = Interlocked.Increment(ref _concurrent);
+            int observed;
+            do
+            {
+                observed = Volatile.Read(ref MaxConcurrent);
+                if (current <= observed) break;
+            } while (Interlocked.CompareExchange(ref MaxConcurrent, current, observed) != observed);
+            try { await Task.Delay(75, cancellationToken); Interlocked.Increment(ref Processed); }
+            finally { Interlocked.Decrement(ref _concurrent); }
+        }
+    }
+
+    private sealed class RecordingFontSubsetProcessor : IFontSubsetProcessor
+    {
+        public List<string> Paths { get; } = [];
+
+        public Task<bool> SubsetAsync(string path, FontSubsetProfile profile, IReadOnlySet<int> usedCodePoints,
+            CancellationToken cancellationToken = default)
+        {
+            lock (Paths) Paths.Add(path);
+            return Task.FromResult(true);
         }
     }
 

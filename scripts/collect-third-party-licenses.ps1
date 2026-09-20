@@ -40,6 +40,17 @@ function Save-PinnedLicense {
 Copy-PackageLicense 'sixlabors.imagesharp' '3.1.12' 'LICENSE' 'ImageSharp-LICENSE.txt'
 Copy-PackageLicense 'skiasharp' '3.119.4' 'LICENSE.txt' 'SkiaSharp-MIT.txt'
 Copy-PackageLicense 'harfbuzzsharp' '8.3.1.3' 'LICENSE.txt' 'HarfBuzzSharp-MIT.txt'
+$harfBuzzNativePackage = if ($RuntimeIdentifier.StartsWith('win-')) {
+    'harfbuzzsharp.nativeassets.win32'
+} elseif ($RuntimeIdentifier.StartsWith('linux-')) {
+    'harfbuzzsharp.nativeassets.linux'
+} elseif ($RuntimeIdentifier.StartsWith('osx-')) {
+    'harfbuzzsharp.nativeassets.macos'
+} else {
+    throw "Unsupported runtime identifier for HarfBuzz notices: $RuntimeIdentifier"
+}
+Copy-PackageLicense $harfBuzzNativePackage '8.3.1.3' 'LICENSE.txt' 'HarfBuzzSharp-NativeAssets-MIT.txt'
+Copy-PackageLicense $harfBuzzNativePackage '8.3.1.3' 'THIRD-PARTY-NOTICES.txt' 'HarfBuzzSharp-NativeAssets-THIRD-PARTY-NOTICES.txt'
 
 $runtimeRoot = Join-Path $nugetPath "microsoft.netcore.app.runtime.$RuntimeIdentifier"
 $runtimePackage = Get-ChildItem -LiteralPath $runtimeRoot -Directory |
@@ -57,6 +68,7 @@ Save-PinnedLicense 'https://raw.githubusercontent.com/Optris/Optris.StaticGraphi
 Save-PinnedLicense 'https://raw.githubusercontent.com/Optris/Optris.StaticGraphics.Avalonia/f47e14e204da8f2f177f6366740a3eda78d05d51/NOTICE.md' 'Optris-NOTICE.md'
 Save-PinnedLicense 'https://raw.githubusercontent.com/rsms/inter/v4.1/LICENSE.txt' 'Inter-OFL-1.1.txt'
 Save-PinnedLicense 'https://raw.githubusercontent.com/nextgal/pfs_upk/abdffcbeb3c733ce234aa99ed42b206d13aaed2f/LICENSE' 'pfs_upk-GPL-3.0.txt'
+Save-PinnedLicense 'https://raw.githubusercontent.com/Alphaly2K/art3m1s-core/0c06f37160961c9ff75d4937d5e6bb0500d0bef9/LICENSE' 'art3m1s-core-MPL-2.0.txt'
 Save-PinnedLicense 'https://raw.githubusercontent.com/hokejyo/VisualNovelUpscaler/d755913eb72f739ad4faea70e689cf933ba54c7f/LICENSE' 'VisualNovelUpscaler-MIT.txt'
 Save-PinnedLicense 'https://raw.githubusercontent.com/xiph/ogg/v1.3.6/COPYING' 'libogg-BSD-3-Clause.txt'
 Save-PinnedLicense 'https://raw.githubusercontent.com/xiph/theora/8e4808736e9c181b971306cc3f05df9e61354004/COPYING' 'libtheora-BSD-3-Clause.txt'

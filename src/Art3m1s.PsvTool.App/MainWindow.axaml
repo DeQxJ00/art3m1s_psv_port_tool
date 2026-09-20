@@ -100,6 +100,9 @@
               <TextBlock Text="{Binding AdvancedLabel}" Classes="sectionTitle" />
               <Grid ColumnDefinitions="*,210"><TextBlock Text="{Binding ParallelLabel}" VerticalAlignment="Center" /><ComboBox Grid.Column="1" ItemsSource="{Binding ParallelChoices}" SelectedIndex="{Binding SelectedParallel}" /></Grid>
               <Grid ColumnDefinitions="*,210"><TextBlock Text="{Binding EncodingLabel}" VerticalAlignment="Center" /><ComboBox Grid.Column="1" ItemsSource="{Binding EncodingChoices}" SelectedIndex="{Binding SelectedEncoding}" /></Grid>
+              <CheckBox IsChecked="{Binding IgnorePfsVideos}">
+                <TextBlock Text="{Binding IgnorePfsVideosLabel}" TextWrapping="Wrap" />
+              </CheckBox>
             </StackPanel>
             <StackPanel Grid.Column="1" Spacing="8">
               <TextBlock Text="{Binding LogLabel}" Classes="sectionTitle" />

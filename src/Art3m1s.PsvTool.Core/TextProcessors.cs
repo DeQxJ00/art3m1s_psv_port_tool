@@ -82,13 +82,14 @@ public sealed partial class ArtemisTextProcessor : ITextProcessor
     private static string ScaleTbl(string text, double ratio)
     {
         StringBuilder result = new(text.Length);
+        bool inEmoteTable = false;
+        int emoteTableDepth = 0;
         foreach (string line in SplitLines(text))
         {
             string scaled = line;
             foreach (string key in TblListKeys)
             {
-                if (!scaled.StartsWith(key, StringComparison.Ordinal)) continue;
-                Match match = Regex.Match(scaled, @"^(" + Regex.Escape(key) + @"\W+?\{)(.*?)(\}.*)", RegexOptions.CultureInvariant);
+                Match match = Regex.Match(scaled, @"^(\s*" + Regex.Escape(key) + @"\W+?\{)(.*?)(\}.*)", RegexOptions.CultureInvariant);
                 if (match.Success)
                     scaled = match.Groups[1].Value + ScaleCommaList(match.Groups[2].Value, ratio) + match.Groups[3].Value;
             }
@@ -106,9 +107,30 @@ public sealed partial class ArtemisTextProcessor : ITextProcessor
             }
             foreach (string key in new[] { "game_width", "game_height" })
             {
-                Match match = Regex.Match(scaled, @"^(" + key + @"\W+)(\d+)(.*)", RegexOptions.CultureInvariant);
+                Match match = Regex.Match(scaled, @"^(\s*" + key + @"\W+)(\d+)(.*)", RegexOptions.CultureInvariant);
                 if (match.Success)
                     scaled = ScalePythonMatch(match, ratio);
+            }
+
+            if (!inEmoteTable && Regex.IsMatch(scaled, @"^\s*emote\s*=\s*\{", RegexOptions.CultureInvariant))
+            {
+                inEmoteTable = true;
+                emoteTableDepth = CountBraceDelta(scaled);
+                if (emoteTableDepth <= 0)
+                {
+                    inEmoteTable = false;
+                    emoteTableDepth = 0;
+                }
+            }
+            else if (inEmoteTable)
+            {
+                scaled = ScaleEmotePoseTuple(scaled, ratio);
+                emoteTableDepth += CountBraceDelta(scaled);
+                if (emoteTableDepth <= 0)
+                {
+                    inEmoteTable = false;
+                    emoteTableDepth = 0;
+                }
             }
             result.Append(scaled);
         }
@@ -140,8 +162,56 @@ public sealed partial class ArtemisTextProcessor : ITextProcessor
     private static string ScaleLua(string text, double ratio)
     {
         (string output, bool changed) = ScaleLinesByKeys(text, ratio, LuaKeys, allowNegative: false);
+        string scaledMulpos = Regex.Replace(output, @"(?<prefix>\bmulpos\(\s*)(?<value>-?\d+)(?<suffix>\s*\))", match =>
+            match.Groups["prefix"].Value + ScaleInteger(match.Groups["value"].Value, ratio) + match.Groups["suffix"].Value,
+            RegexOptions.CultureInvariant);
+        if (!string.Equals(output, scaledMulpos, StringComparison.Ordinal))
+        {
+            output = scaledMulpos;
+            changed = true;
+        }
         return changed ? output : text;
     }
+
+    private static string ScaleEmotePoseTuple(string line, double ratio)
+    {
+        Match match = Regex.Match(line,
+            @"^(?<prefix>\s*[A-Za-z_][A-Za-z0-9_]*\s*=\s*\{\s*)(?<scale>-?(?:\d+(?:\.\d+)?|\.\d+))(?<s1>\s*,\s*)(?<x>-?\d+)(?<s2>\s*,\s*)(?<y>-?\d+)(?<s3>\s*,\s*)(?<width>\d+)(?<s4>\s*,\s*)(?<height>\d+)(?<suffix>\s*,?\s*\}.*)$",
+            RegexOptions.CultureInvariant);
+        if (!match.Success) return line;
+
+        return match.Groups["prefix"].Value
+            + match.Groups["scale"].Value
+            + match.Groups["s1"].Value + ScaleInteger(match.Groups["x"].Value, ratio)
+            + match.Groups["s2"].Value + ScaleInteger(match.Groups["y"].Value, ratio)
+            + match.Groups["s3"].Value + ScaleInteger(match.Groups["width"].Value, ratio)
+            + match.Groups["s4"].Value + ScaleInteger(match.Groups["height"].Value, ratio)
+            + match.Groups["suffix"].Value;
+    }
+
+    private static int CountBraceDelta(string line)
+    {
+        int delta = 0;
+        bool inString = false;
+        bool escaped = false;
+        foreach (char character in line)
+        {
+            if (inString)
+            {
+                if (escaped) escaped = false;
+                else if (character == '\\') escaped = true;
+                else if (character == '"') inString = false;
+                continue;
+            }
+            if (character == '"') inString = true;
+            else if (character == '{') delta++;
+            else if (character == '}') delta--;
+        }
+        return delta;
+    }
+
+    private static string ScaleInteger(string value, double ratio) =>
+        ((int)(int.Parse(value, NumberStyles.Integer, CultureInfo.InvariantCulture) * ratio)).ToString(CultureInfo.InvariantCulture);
 
     private static (string Text, bool Changed) ScaleLinesByKeys(string text, double ratio, IReadOnlyList<string> keys, bool allowNegative)
     {
