@@ -17,7 +17,17 @@ A PSV porting assistant for Artemis-engine games. It extracts each physical PFS 
 
 ## Downloads and platform support
 
-Releases provide NativeAOT single files for `win-x64` and `linux-x64`, plus unsigned and unnotarized `.app.zip` bundles for `osx-x64` and `osx-arm64`. macOS may require manual approval under Privacy & Security. FFmpeg/ffprobe GPL Full executables are shipped in the release package's `tools` directory and are not embedded in the main application: Windows/Linux use checksum-verified BtbN n9.0 static binaries, while macOS uses an equivalent FFmpeg 9.0.2 source build. Every package includes libdav1d, x264, and libtheora, with no nonfree components. Development builds may use `ART3M1S_FFMPEG` and `ART3M1S_FFPROBE`.
+Every release provides two versioned archives for each of `win-x64`, `linux-x64`, `osx-x64`, and `osx-arm64`: `with-ffmpeg` works out of the box, while the smaller `no-ffmpeg` archive requires FFmpeg to be supplied separately. Windows/Linux use a NativeAOT single file; macOS uses an unsigned and unnotarized `.app.zip` bundle and may require manual approval under Privacy & Security.
+
+### Installing FFmpeg
+
+Video and OGV conversion require both `ffmpeg` and `ffprobe`. The `with-ffmpeg` archive already places them correctly. For a `no-ffmpeg` archive, use a GPL Full build containing libdav1d, libx264, and libtheora, then choose one of these configurations:
+
+- Windows/Linux: create a `tools` folder beside the application and place `ffmpeg.exe` / `ffprobe.exe` (Windows) or `ffmpeg` / `ffprobe` (Linux) inside it. They may also be placed directly beside the application.
+- macOS: place both files in `art3m1s_psv_port_tool.app/Contents/MacOS/tools/` and make them executable (`chmod +x ffmpeg ffprobe`).
+- Every platform: set `ART3M1S_FFMPEG` and `ART3M1S_FFPROBE` to the full paths of the two executables, or add both to the system `PATH`.
+
+Lookup order is environment variables, the application's `tools` directory, beside the application, then system `PATH`. In the supplied Full packages, Windows/Linux use checksum-verified BtbN n9.0 static binaries and macOS uses an equivalent FFmpeg 9.0.2 source build. No nonfree components are enabled.
 
 ## Usage
 
@@ -58,7 +68,7 @@ dotnet publish src/Art3m1s.PsvTool.App -c Release -r win-x64
 ./scripts/generate-screenshots.ps1
 ```
 
-`ci.yml` checks Release builds, tests, formatting, screenshot baselines, and multi-platform NativeAOT. `release.yml` builds four targets for `v*` tags or manual runs, verifies and packages FFmpeg Full, then publishes checksums, SBOM, licenses, and FFmpeg build/source information.
+`ci.yml` checks Release builds, tests, formatting, screenshot baselines, and multi-platform NativeAOT. For `v*` tags or manual runs, `release.yml` builds all four targets and publishes versioned `with-ffmpeg` / `no-ffmpeg` archives for each platform, plus checksums, SBOM, licenses, and FFmpeg build/source information.
 
 ## Known limitations
 

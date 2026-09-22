@@ -17,7 +17,17 @@
 
 ## 下载与平台支持
 
-Release 提供 `win-x64`、`linux-x64` NativeAOT 单文件，以及未签名、未公证的 `osx-x64` / `osx-arm64` `.app.zip`。macOS 首次启动可能需要在“隐私与安全性”中手动允许。FFmpeg/ffprobe GPL Full 可执行文件位于发行包的 `tools` 目录，不嵌入主程序：Windows/Linux 直接附带经官方校验和验证的 BtbN n9.0 静态二进制，macOS 使用 FFmpeg 9.0.2 等价源码构建；均包含 libdav1d、x264 与 libtheora，不包含 nonfree 组件。开发构建也可通过 `ART3M1S_FFMPEG` 与 `ART3M1S_FFPROBE` 指定工具。
+Release 为 `win-x64`、`linux-x64`、`osx-x64` 和 `osx-arm64` 各提供两种带版本号的压缩包：`with-ffmpeg` 包可直接使用，`no-ffmpeg` 包更小、需要自行放置 FFmpeg。Windows/Linux 为 NativeAOT 单文件，macOS 为未签名、未公证的 `.app.zip`；macOS 首次启动可能需要在“隐私与安全性”中手动允许。
+
+### FFmpeg 放置方法
+
+视频和 OGV 转换需要同时提供 `ffmpeg` 与 `ffprobe`。下载 `with-ffmpeg` 包时两者已位于正确位置；下载 `no-ffmpeg` 包时，请使用包含 libdav1d、libx264 和 libtheora 的 GPL Full 构建，并按以下任一方式配置：
+
+- Windows/Linux：在程序所在目录新建 `tools`，放入 `ffmpeg.exe` / `ffprobe.exe`（Windows）或 `ffmpeg` / `ffprobe`（Linux）。也可以直接放在主程序旁。
+- macOS：放入 `art3m1s_psv_port_tool.app/Contents/MacOS/tools/`，并为两个文件增加可执行权限（`chmod +x ffmpeg ffprobe`）。
+- 所有平台：可分别设置 `ART3M1S_FFMPEG` 和 `ART3M1S_FFPROBE` 为两个程序的完整路径，或把二者加入系统 `PATH`。
+
+查找顺序为环境变量、程序目录的 `tools`、主程序旁、系统 `PATH`。项目提供的 Full 包中，Windows/Linux 使用经校验的 BtbN n9.0 静态二进制，macOS 使用 FFmpeg 9.0.2 等价源码构建；均不包含 nonfree 组件。
 
 ## 使用步骤
 
@@ -58,7 +68,7 @@ dotnet publish src/Art3m1s.PsvTool.App -c Release -r win-x64
 ./scripts/generate-screenshots.ps1
 ```
 
-`ci.yml` 执行 Release 编译、测试、格式、截图基线与多平台 NativeAOT 检查；`release.yml` 在 `v*` 标签或手动触发时构建四个平台，校验并装入 FFmpeg Full，随后发布校验和、SBOM、许可与 FFmpeg 构建信息。
+`ci.yml` 执行 Release 编译、测试、格式、截图基线与多平台 NativeAOT 检查；`release.yml` 在 `v*` 标签或手动触发时构建四个平台，并为每个平台发布带版本号的 `with-ffmpeg` / `no-ffmpeg` 压缩包、校验和、SBOM、许可与 FFmpeg 构建信息。
 
 ## 已知限制
 

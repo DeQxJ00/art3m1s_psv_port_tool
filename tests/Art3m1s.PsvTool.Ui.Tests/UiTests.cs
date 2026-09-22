@@ -20,6 +20,8 @@ public sealed class UiTests
         Assert.Equal("字体削减（TTF / OTF）", viewModel.FontSubsetLabel);
         Assert.Equal("动画（OGV / E-mote PSB）", viewModel.AnimationLabel);
         Assert.Contains("art3m1s-core", viewModel.AboutBody);
+        Assert.Equal("项目 GitHub", viewModel.ProjectRepositoryLabel);
+        Assert.Equal("https://github.com/DeQxJ00/art3m1s_psv_port_tool", MainWindow.RepositoryUrl);
         Assert.True(viewModel.IgnorePfsVideos);
         Assert.Contains("WMV / DAT / MP4 / AVI / MPG / MKV", viewModel.IgnorePfsVideosLabel);
         Assert.DoesNotContain("OGV", viewModel.IgnorePfsVideosLabel);
@@ -35,6 +37,7 @@ public sealed class UiTests
         Assert.Equal("Animation (OGV / E-mote PSB)", viewModel.AnimationLabel);
         Assert.Equal("Ignore video inside PFS (WMV / DAT / MP4 / AVI / MPG / MKV)", viewModel.IgnorePfsVideosLabel);
         Assert.Equal("art3m1s PSV Port Tool", viewModel.Title);
+        Assert.Equal("Project GitHub", viewModel.ProjectRepositoryLabel);
     }
 
     [Fact]

@@ -43,6 +43,17 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
+      - name: Resolve package version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -match '^v(.+)$') {
+            $version = $Matches[1]
+          } else {
+            [xml]$props = Get-Content Directory.Build.props -Raw
+            $version = $props.Project.PropertyGroup.Version
+          }
+          if ([string]::IsNullOrWhiteSpace($version)) { throw 'Unable to resolve package version.' }
+          "PACKAGE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
@@ -177,21 +188,30 @@ jobs:
             Copy-Item ffmpeg-install/BTBN-checksums.sha256 "publish/${{ matrix.rid }}/tools/BTBN-checksums.sha256"
           }
           if ('${{ matrix.rid }}' -eq 'win-x64') {
-            $files = @(
+            $withFfmpegFiles = @(
               "publish/${{ matrix.rid }}/Art3m1s.PsvTool.App.exe",
               "publish/${{ matrix.rid }}/LICENSE",
               "publish/${{ matrix.rid }}/FFMPEG-BUILD-CONFIG.txt",
               "publish/${{ matrix.rid }}/tools",
               "publish/${{ matrix.rid }}/licenses"
             )
-            Compress-Archive -Path $files -DestinationPath "art3m1s_psv_port_tool-${{ matrix.rid }}.zip"
+            $withoutFfmpegFiles = @(
+              "publish/${{ matrix.rid }}/Art3m1s.PsvTool.App.exe",
+              "publish/${{ matrix.rid }}/LICENSE",
+              "publish/${{ matrix.rid }}/licenses"
+            )
+            $prefix = "art3m1s_psv_port_tool-v$env:PACKAGE_VERSION-${{ matrix.rid }}"
+            Compress-Archive -Path $withFfmpegFiles -DestinationPath "$prefix-with-ffmpeg.zip"
+            Compress-Archive -Path $withoutFfmpegFiles -DestinationPath "$prefix-no-ffmpeg.zip"
           }
       - if: runner.os == 'Linux'
         shell: bash
         run: |
           chmod +x publish/${{ matrix.rid }}/Art3m1s.PsvTool.App
           cd publish/${{ matrix.rid }}
-          zip -9r ../../art3m1s_psv_port_tool-${{ matrix.rid }}.zip Art3m1s.PsvTool.App LICENSE FFMPEG-BUILD-CONFIG.txt tools licenses
+          prefix="art3m1s_psv_port_tool-v${PACKAGE_VERSION}-${{ matrix.rid }}"
+          zip -9r "../../${prefix}-with-ffmpeg.zip" Art3m1s.PsvTool.App LICENSE FFMPEG-BUILD-CONFIG.txt tools licenses
+          zip -9r "../../${prefix}-no-ffmpeg.zip" Art3m1s.PsvTool.App LICENSE licenses
       - if: runner.os == 'macOS'
         shell: bash
         run: |
@@ -218,7 +238,11 @@ jobs:
           cp -R publish/${{ matrix.rid }}/tools "$app/MacOS/tools"
           cp -R publish/${{ matrix.rid }}/licenses "$app/Resources/licenses"
           cd bundle
-          zip -9yr ../art3m1s_psv_port_tool-${{ matrix.rid }}.app.zip art3m1s_psv_port_tool.app
+          prefix="art3m1s_psv_port_tool-v${PACKAGE_VERSION}-${{ matrix.rid }}"
+          zip -9yr "../${prefix}-with-ffmpeg.app.zip" art3m1s_psv_port_tool.app
+          rm -rf art3m1s_psv_port_tool.app/Contents/MacOS/tools
+          rm -f art3m1s_psv_port_tool.app/Contents/Resources/FFMPEG-BUILD-CONFIG.txt
+          zip -9yr "../${prefix}-no-ffmpeg.app.zip" art3m1s_psv_port_tool.app
       - uses: anchore/sbom-action@v0
         with:
           path: publish/${{ matrix.rid }}
@@ -226,13 +250,14 @@ jobs:
           output-file: art3m1s_psv_port_tool-${{ matrix.rid }}.spdx.json
       - shell: pwsh
         run: |
-          $archive = Get-ChildItem "art3m1s_psv_port_tool-${{ matrix.rid }}*.zip" | Select-Object -First 1
-          (Get-FileHash $archive -Algorithm SHA256).Hash + "  " + $archive.Name | Set-Content "SHA256-${{ matrix.rid }}.txt"
+          $archives = Get-ChildItem "art3m1s_psv_port_tool-v$env:PACKAGE_VERSION-${{ matrix.rid }}-*.zip" | Sort-Object Name
+          if ($archives.Count -ne 2) { throw "Expected two release archives, found $($archives.Count)." }
+          $archives | ForEach-Object { (Get-FileHash $_ -Algorithm SHA256).Hash + "  " + $_.Name } | Set-Content "SHA256-${{ matrix.rid }}.txt"
       - uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.rid }}
           path: |
-            art3m1s_psv_port_tool-${{ matrix.rid }}*.zip
+            art3m1s_psv_port_tool-v*-${{ matrix.rid }}-*.zip
             art3m1s_psv_port_tool-${{ matrix.rid }}.spdx.json
             SHA256-${{ matrix.rid }}.txt
 
@@ -299,5 +324,6 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
           body: |
-            Windows and Linux packages include standalone BtbN FFmpeg/ffprobe n9.0 GPL Full static binaries with libdav1d, libx264, and libtheora. macOS packages use the equivalent source-built codec set. No nonfree components are enabled.
+            Each platform provides both `with-ffmpeg` and `no-ffmpeg` archives. The `with-ffmpeg` packages include standalone FFmpeg/ffprobe GPL Full binaries; the smaller `no-ffmpeg` packages require users to provide both tools in the documented location or through environment variables/PATH.
+            Windows and Linux Full packages use BtbN n9.0 static binaries with libdav1d, libx264, and libtheora. macOS Full packages use the equivalent source-built codec set. No nonfree components are enabled.
             Corresponding FFmpeg, dav1d, x264, libtheora, libogg, and zlib sources are attached; license texts, build configuration, provider checksums, and application-package checksums are included with the release.

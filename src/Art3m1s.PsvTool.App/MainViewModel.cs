@@ -85,7 +85,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string AdvancedLabel => L("Advanced"); public string ParallelLabel => L("Parallel"); public string AutoLabel => L("Auto");
     public string EncodingLabel => L("Encoding"); public string LogLabel => L("Log"); public string StartLabel => L("Start");
     public string IgnorePfsVideosLabel => L("IgnorePfsVideos");
-    public string CancelLabel => L("Cancel"); public string AboutLabel => L("About"); public string AboutBody => L("AboutBody"); public string ThemeLabel => L("Theme"); public string ThemeValue => L(IsDark ? "Dark" : "Light");
+    public string CancelLabel => L("Cancel"); public string AboutLabel => L("About"); public string AboutBody => L("AboutBody"); public string ProjectRepositoryLabel => L("ProjectRepository"); public string ThemeLabel => L("Theme"); public string ThemeValue => L(IsDark ? "Dark" : "Light");
 
     public void SetRatio(double ratio) => Ratio = ratio.ToString("0.###", CultureInfo.InvariantCulture);
     public void SetLanguage(string language)
@@ -199,6 +199,6 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private void OnPropertyChanged([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     private void RaiseAllLocalized()
     {
-        foreach (string property in new[] { nameof(Title), nameof(Subtitle), nameof(ProjectLabel), nameof(InputLabel), nameof(OutputLabel), nameof(BrowseLabel), nameof(ScanLabel), nameof(RatioLabel), nameof(RatioHelp), nameof(OriginalLabel), nameof(TargetLabel), nameof(TypesLabel), nameof(TextLabel), nameof(ImagesLabel), nameof(AnimationLabel), nameof(VideoLabel), nameof(FontSubsetLabel), nameof(FontSubsetHelp), nameof(FontProfiles), nameof(ParallelChoices), nameof(ModeLabel), nameof(ModeHelp), nameof(AdvancedLabel), nameof(ParallelLabel), nameof(AutoLabel), nameof(EncodingLabel), nameof(IgnorePfsVideosLabel), nameof(LogLabel), nameof(StartLabel), nameof(CancelLabel), nameof(AboutLabel), nameof(AboutBody), nameof(ThemeLabel), nameof(ThemeValue), nameof(ScanSummary), nameof(OriginalResolution), nameof(TargetResolution), nameof(Language) }) OnPropertyChanged(property);
+        foreach (string property in new[] { nameof(Title), nameof(Subtitle), nameof(ProjectLabel), nameof(InputLabel), nameof(OutputLabel), nameof(BrowseLabel), nameof(ScanLabel), nameof(RatioLabel), nameof(RatioHelp), nameof(OriginalLabel), nameof(TargetLabel), nameof(TypesLabel), nameof(TextLabel), nameof(ImagesLabel), nameof(AnimationLabel), nameof(VideoLabel), nameof(FontSubsetLabel), nameof(FontSubsetHelp), nameof(FontProfiles), nameof(ParallelChoices), nameof(ModeLabel), nameof(ModeHelp), nameof(AdvancedLabel), nameof(ParallelLabel), nameof(AutoLabel), nameof(EncodingLabel), nameof(IgnorePfsVideosLabel), nameof(LogLabel), nameof(StartLabel), nameof(CancelLabel), nameof(AboutLabel), nameof(AboutBody), nameof(ProjectRepositoryLabel), nameof(ThemeLabel), nameof(ThemeValue), nameof(ScanSummary), nameof(OriginalResolution), nameof(TargetResolution), nameof(Language) }) OnPropertyChanged(property);
     }
 }

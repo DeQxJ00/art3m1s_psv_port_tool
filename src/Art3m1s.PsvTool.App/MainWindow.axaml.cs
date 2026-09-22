@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
@@ -8,6 +9,8 @@ namespace Art3m1s.PsvTool.App;
 
 public sealed partial class MainWindow : Window
 {
+    public const string RepositoryUrl = "https://github.com/DeQxJ00/art3m1s_psv_port_tool";
+
     public MainViewModel ViewModel { get; }
 
     public MainWindow() : this(new MainViewModel()) { }
@@ -63,6 +66,13 @@ public sealed partial class MainWindow : Window
         string appVersion = typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "1.0.0";
         string avalonia = typeof(Avalonia.Application).Assembly.GetName().Version?.ToString(3) ?? "12.1.2";
         string imageSharp = typeof(SixLabors.ImageSharp.Image).Assembly.GetName().Version?.ToString(3) ?? "3.1.12";
+        Button repositoryLink = new()
+        {
+            Content = $"{ViewModel.ProjectRepositoryLabel}: {RepositoryUrl}",
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left
+        };
+        repositoryLink.Click += (_, _) => Process.Start(new ProcessStartInfo(RepositoryUrl) { UseShellExecute = true });
+
         Window dialog = new()
         {
             Title = ViewModel.AboutLabel,
@@ -80,6 +90,7 @@ public sealed partial class MainWindow : Window
                     {
                         new TextBlock { Text = $"{ViewModel.Title} v{appVersion}", FontSize = 22, FontWeight = Avalonia.Media.FontWeight.Bold },
                         new TextBlock { Text = $".NET 10 · Avalonia {avalonia} · ImageSharp {imageSharp} · FFmpeg n9.0 GPL Full", TextWrapping = Avalonia.Media.TextWrapping.Wrap },
+                        repositoryLink,
                         new TextBlock { Text = ViewModel.AboutBody, TextWrapping = Avalonia.Media.TextWrapping.Wrap }
                     }
                 }
